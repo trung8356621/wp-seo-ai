@@ -1,0 +1,273 @@
+/**
+ * OmiChannel SEO AI Bridge – Admin UI (SaaS-style cards)
+ */
+
+.omi-seo-ai-bridge-wrap {
+    margin: 0 0 0 -20px;
+    padding: 40px 20px;
+    min-height: calc(100vh - 32px);
+    background: #f3f4f6;
+    box-sizing: border-box;
+}
+
+@media screen and (max-width: 782px) {
+    .omi-seo-ai-bridge-wrap {
+        margin-left: -10px;
+        padding: 24px 16px;
+    }
+}
+
+.omi-seo-ai-bridge-card {
+    max-width: 520px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+    padding: 40px 36px 36px;
+    position: relative;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.omi-seo-ai-bridge-card--wide {
+    max-width: 640px;
+    padding: 36px 40px 40px;
+}
+
+.omi-seo-ai-bridge-card__corner {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+}
+
+.omi-seo-ai-bridge-card__corner a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: #f3f4f6;
+    color: #4b5563;
+    text-decoration: none;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.omi-seo-ai-bridge-card__corner a:hover {
+    background: #e5e7eb;
+    color: #1d4ed8;
+}
+
+.omi-seo-ai-bridge-card__corner .dashicons {
+    font-size: 22px;
+    width: 22px;
+    height: 22px;
+}
+
+.omi-seo-ai-bridge-back {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #1d4ed8;
+    text-decoration: none;
+}
+
+.omi-seo-ai-bridge-back:hover {
+    color: #1e40af;
+    text-decoration: underline;
+}
+
+.omi-seo-ai-bridge-back .dashicons {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+}
+
+.omi-seo-ai-bridge-icon-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.omi-seo-ai-bridge-icon-wrap .dashicons {
+    font-size: 64px;
+    width: 64px;
+    height: 64px;
+    color: #2563eb;
+}
+
+.omi-seo-ai-bridge-card h1,
+.omi-seo-ai-bridge-card h2 {
+    margin: 0 0 12px;
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+    color: #111827;
+    line-height: 1.3;
+}
+
+.omi-seo-ai-bridge-card .omi-seo-ai-bridge-subtitle {
+    margin: 0 0 28px;
+    text-align: center;
+    font-size: 15px;
+    line-height: 1.55;
+    color: #6b7280;
+}
+
+.omi-seo-ai-bridge-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+}
+
+.omi-seo-ai-bridge-status-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.omi-seo-ai-bridge-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.omi-seo-ai-bridge-badge__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.omi-seo-ai-bridge-badge--ok {
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+}
+
+.omi-seo-ai-bridge-badge--ok .omi-seo-ai-bridge-badge__dot {
+    background: #22c55e;
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
+}
+
+.omi-seo-ai-bridge-badge--off {
+    background: #f3f4f6;
+    color: #6b7280;
+    border: 1px solid #e5e7eb;
+}
+
+.omi-seo-ai-bridge-badge--off .omi-seo-ai-bridge-badge__dot {
+    background: #9ca3af;
+}
+
+.omi-seo-ai-bridge-footnote {
+    text-align: center;
+    font-size: 12px;
+    color: #9ca3af;
+    margin: 0;
+}
+
+/* Settings grid */
+.omi-seo-ai-bridge-form {
+    margin-top: 8px;
+}
+
+.omi-seo-ai-bridge-row {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 16px 24px;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+@media screen and (max-width: 600px) {
+    .omi-seo-ai-bridge-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+}
+
+.omi-seo-ai-bridge-row label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.omi-seo-ai-bridge-row .omi-seo-ai-bridge-input {
+    width: 100%;
+    max-width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    font-size: 14px;
+    color: #111827;
+    background: #fff;
+    box-sizing: border-box;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.omi-seo-ai-bridge-row .omi-seo-ai-bridge-input:focus {
+    border-color: #2563eb;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.omi-seo-ai-bridge-row--status .omi-seo-ai-bridge-status-row {
+    margin: 0;
+    justify-content: flex-start;
+}
+
+.omi-seo-ai-bridge-submit-wrap {
+    margin-top: 28px;
+}
+
+.omi-seo-ai-bridge-submit {
+    display: block;
+    width: 100%;
+    padding: 14px 24px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #ffffff !important;
+    background: #1d4ed8 !important;
+    border: none !important;
+    border-radius: 10px !important;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(29, 78, 216, 0.25);
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.omi-seo-ai-bridge-submit:hover {
+    background: #1e40af !important;
+    box-shadow: 0 4px 8px rgba(29, 78, 216, 0.3);
+}
+
+.omi-seo-ai-bridge-notice {
+    margin: 0 0 20px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #047857;
+    font-size: 14px;
+}
+
+.omi-seo-ai-bridge-card--wide h2 {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.omi-seo-ai-bridge-card--wide .omi-seo-ai-bridge-subtitle {
+    margin-bottom: 24px;
+}
