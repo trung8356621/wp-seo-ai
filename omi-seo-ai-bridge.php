@@ -28,6 +28,7 @@ define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
 
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-seo-plugin-resolver.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-sync-provider.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-comment-review-publisher.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-controller.php';
 
 add_action('rest_api_init', static function (): void {

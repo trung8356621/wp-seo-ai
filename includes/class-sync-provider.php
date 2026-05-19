@@ -135,10 +135,31 @@ final class Sync_Provider
         }
     }
 
+    public function map_post_by_id(int $postId): ?array
+    {
+        $post = get_post($postId);
+        if (! $post instanceof \WP_Post) {
+            return null;
+        }
+
+        $seoType = $post->post_type === 'product' ? 'product' : 'article';
+
+        return $this->map_post($post, $seoType, (string) $post->post_type);
+    }
+
     private function map_post(\WP_Post $post, string $seoType, string $wpPostType): array
     {
         $seo = Seo_Plugin_Resolver::for_post((int) $post->ID);
         $content = apply_filters('the_content', (string) $post->post_content);
+        $featuredImageUrl = '';
+        $thumbId = (int) get_post_thumbnail_id($post);
+        if ($thumbId > 0) {
+            $featuredImageUrl = (string) wp_get_attachment_image_url($thumbId, 'medium');
+        }
+
+        $productGallery = $wpPostType === 'product'
+            ? $this->resolve_product_gallery((int) $post->ID)
+            : [];
 
         return [
             'wp_id'        => (int) $post->ID,
@@ -146,6 +167,9 @@ final class Sync_Provider
             'wp_post_type' => $wpPostType,
             'title'        => (string) get_the_title($post),
             'slug'         => (string) $post->post_name,
+            'post_content' => (string) $post->post_content,
+            'featured_image_url' => $featuredImageUrl,
+            'product_gallery' => $productGallery,
             'status'       => (string) $post->post_status,
             'published_at' => $post->post_status === 'publish'
                 ? get_post_time('c', true, $post)
@@ -159,5 +183,40 @@ final class Sync_Provider
                 'focus_keyword'    => $seo['focus_keyword'],
             ],
         ];
+    }
+
+    /**
+     * WooCommerce product gallery (_product_image_gallery).
+     *
+     * @return array<int, array{id: int, url: string}>
+     */
+    private function resolve_product_gallery(int $postId): array
+    {
+        $raw = get_post_meta($postId, '_product_image_gallery', true);
+        if (! is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $gallery = [];
+        foreach (array_filter(array_map('intval', explode(',', $raw))) as $attachmentId) {
+            if ($attachmentId <= 0) {
+                continue;
+            }
+
+            $url = (string) wp_get_attachment_image_url($attachmentId, 'woocommerce_thumbnail');
+            if ($url === '') {
+                $url = (string) wp_get_attachment_image_url($attachmentId, 'thumbnail');
+            }
+            if ($url === '') {
+                continue;
+            }
+
+            $gallery[] = [
+                'id'  => $attachmentId,
+                'url' => $url,
+            ];
+        }
+
+        return $gallery;
     }
 }
