@@ -263,6 +263,12 @@
     font-size: 14px;
 }
 
+.omi-seo-ai-bridge-notice--warn {
+    background: #fffbeb;
+    border-color: #fcd34d;
+    color: #92400e;
+}
+
 .omi-seo-ai-bridge-card--wide h2 {
     padding-left: 0;
     padding-right: 0;

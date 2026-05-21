@@ -11,6 +11,24 @@ if (! defined('ABSPATH')) {
 final class Sync_Provider
 {
     /**
+     * Trang tĩnh được chọn làm trang chủ (Cài đặt → Đọc) — không đẩy lên Laravel.
+     */
+    public static function is_sync_excluded_post(int $postId): bool
+    {
+        if ($postId <= 0) {
+            return false;
+        }
+
+        if ((string) get_option('show_on_front') !== 'page') {
+            return false;
+        }
+
+        $frontPageId = (int) get_option('page_on_front');
+
+        return $frontPageId > 0 && $postId === $frontPageId;
+    }
+
+    /**
      * @return array{counts: array<string, int>, items: array<int, array<string, mixed>>}
      */
     public function collect(int $limitPerType = 0): array
@@ -52,15 +70,22 @@ final class Sync_Provider
 
         $query = new \WP_Query($queryArgs);
         $countKey = $postType === 'page' ? 'page' : $seoType;
-        $counts[$countKey] = is_array($query->posts) ? count($query->posts) : 0;
+        $synced = 0;
 
         foreach ($query->posts as $post) {
             if (! $post instanceof \WP_Post) {
                 continue;
             }
 
+            if (self::is_sync_excluded_post((int) $post->ID)) {
+                continue;
+            }
+
             $items[] = $this->map_post($post, $seoType, $postType);
+            $synced++;
         }
+
+        $counts[$countKey] = $synced;
 
         wp_reset_postdata();
     }
@@ -112,31 +137,32 @@ final class Sync_Provider
                 continue;
             }
 
-            $seo = Seo_Plugin_Resolver::for_term((int) $term->term_id, $taxonomy);
-            $description = (string) $term->description;
-
-            $items[] = [
-                'wp_id'        => (int) $term->term_id,
-                'type'         => $seoType,
-                'wp_post_type' => $taxonomy,
-                'title'        => (string) $term->name,
-                'slug'         => (string) $term->slug,
-                'status'       => 'publish',
-                'published_at' => null,
-                'seo'          => $seo,
-                'scoring'      => [
-                    'body'             => $description,
-                    'slug'             => (string) $term->slug,
-                    'seo_title'        => $seo['seo_title'],
-                    'meta_description' => $seo['meta_description'],
-                    'focus_keyword'    => $seo['focus_keyword'],
-                ],
-            ];
+            $items[] = $this->map_term($term, $taxonomy, $seoType);
         }
+    }
+
+    public function map_term_by_id(string $taxonomy, int $termId): ?array
+    {
+        if (! taxonomy_exists($taxonomy)) {
+            return null;
+        }
+
+        $term = get_term($termId, $taxonomy);
+        if (! $term instanceof \WP_Term || is_wp_error($term)) {
+            return null;
+        }
+
+        $seoType = $this->seo_type_for_taxonomy($taxonomy);
+
+        return $this->map_term($term, $taxonomy, $seoType);
     }
 
     public function map_post_by_id(int $postId): ?array
     {
+        if (self::is_sync_excluded_post($postId)) {
+            return null;
+        }
+
         $post = get_post($postId);
         if (! $post instanceof \WP_Post) {
             return null;
@@ -145,6 +171,45 @@ final class Sync_Provider
         $seoType = $post->post_type === 'product' ? 'product' : 'article';
 
         return $this->map_post($post, $seoType, (string) $post->post_type);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function map_term(\WP_Term $term, string $taxonomy, string $seoType): array
+    {
+        $termId = (int) $term->term_id;
+        $seo = Seo_Plugin_Resolver::for_term($termId, $taxonomy);
+        $description = (string) $term->description;
+
+        return [
+            'wp_id'              => $termId,
+            'type'               => $seoType,
+            'wp_post_type'       => $taxonomy,
+            'wp_entity'          => 'term',
+            'title'              => (string) $term->name,
+            'slug'               => (string) $term->slug,
+            'permalink'          => $this->resolve_term_permalink($term),
+            'post_content'       => $description,
+            'featured_image_url' => '',
+            'product_gallery'    => [],
+            'post_images'        => (new Post_Images_Extractor())->extract_from_content($description),
+            'status'             => 'publish',
+            'published_at'       => null,
+            'seo'                => $seo,
+            'scoring'            => [
+                'body'             => $description,
+                'slug'             => (string) $term->slug,
+                'seo_title'        => $seo['seo_title'],
+                'meta_description' => $seo['meta_description'],
+                'focus_keyword'    => $seo['focus_keyword'],
+            ],
+        ];
+    }
+
+    private function seo_type_for_taxonomy(string $taxonomy): string
+    {
+        return $taxonomy === 'product_cat' ? 'product_category' : 'category';
     }
 
     private function map_post(\WP_Post $post, string $seoType, string $wpPostType): array
@@ -161,15 +226,21 @@ final class Sync_Provider
             ? $this->resolve_product_gallery((int) $post->ID)
             : [];
 
+        $postImages = (new Post_Images_Extractor())->extract_from_content((string) $post->post_content);
+
         return [
             'wp_id'        => (int) $post->ID,
             'type'         => $seoType,
             'wp_post_type' => $wpPostType,
+            'wp_entity'    => 'post',
             'title'        => (string) get_the_title($post),
             'slug'         => (string) $post->post_name,
+            'permalink'    => $this->resolve_post_permalink($post),
             'post_content' => (string) $post->post_content,
+            'faqs'         => Faq_Shortcode::resolve_faqs_for_post((int) $post->ID),
             'featured_image_url' => $featuredImageUrl,
             'product_gallery' => $productGallery,
+            'post_images'     => $postImages,
             'status'       => (string) $post->post_status,
             'published_at' => $post->post_status === 'publish'
                 ? get_post_time('c', true, $post)
@@ -218,5 +289,23 @@ final class Sync_Provider
         }
 
         return $gallery;
+    }
+
+    private function resolve_post_permalink(\WP_Post $post): string
+    {
+        $url = get_permalink($post);
+
+        return is_string($url) ? $url : '';
+    }
+
+    private function resolve_term_permalink(\WP_Term $term): string
+    {
+        $link = get_term_link($term);
+
+        if (is_wp_error($link)) {
+            return '';
+        }
+
+        return (string) $link;
     }
 }
