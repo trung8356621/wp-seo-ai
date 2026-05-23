@@ -31,19 +31,8 @@ final class Faq_Shortcode
     {
         unset($atts);
 
-        global $post;
-        if (! $post instanceof \WP_Post) {
-            return '';
-        }
-
-        $faqs = get_post_meta($post->ID, self::META_FAQS, true);
-
-        if (is_string($faqs)) {
-            $decoded = json_decode($faqs, true);
-            $faqs = is_array($decoded) ? $decoded : [];
-        }
-
-        if (! is_array($faqs) || $faqs === []) {
+        $faqs = self::resolve_faqs_for_render_context();
+        if ($faqs === []) {
             return '';
         }
 
@@ -149,11 +138,58 @@ final class Faq_Shortcode
     }
 
     /**
+     * @return list<array{question: string, answer: string, more: string}>
+     */
+    private static function resolve_faqs_for_render_context(): array
+    {
+        global $post;
+
+        if ($post instanceof \WP_Post) {
+            return self::resolve_faqs_for_post((int) $post->ID);
+        }
+
+        if (function_exists('is_tax') && (is_tax() || is_category() || is_tag())) {
+            $term = get_queried_object();
+            if ($term instanceof \WP_Term) {
+                return self::resolve_faqs_for_term((int) $term->term_id);
+            }
+        }
+
+        return [];
+    }
+
+    /**
      * @param  list<array{question: string, answer: string, more?: string}>  $faqs
      */
     public static function store_faqs(int $postId, array $faqs): void
     {
         update_post_meta($postId, self::META_FAQS, $faqs);
+    }
+
+    /**
+     * @param  list<array{question: string, answer: string, more?: string}>  $faqs
+     */
+    public static function store_faqs_for_term(int $termId, array $faqs): void
+    {
+        update_term_meta($termId, self::META_FAQS, $faqs);
+    }
+
+    /**
+     * @return list<array{question: string, answer: string, more: string}>
+     */
+    public static function resolve_faqs_for_term(int $termId): array
+    {
+        if ($termId <= 0) {
+            return [];
+        }
+
+        $faqs = get_term_meta($termId, self::META_FAQS, true);
+        if (is_string($faqs)) {
+            $decoded = json_decode($faqs, true);
+            $faqs = is_array($decoded) ? $decoded : [];
+        }
+
+        return self::normalize_faq_rows(is_array($faqs) ? $faqs : []);
     }
 
     /**
@@ -171,7 +207,16 @@ final class Faq_Shortcode
             $faqs = is_array($decoded) ? $decoded : [];
         }
 
-        if (! is_array($faqs) || $faqs === []) {
+        return self::normalize_faq_rows(is_array($faqs) ? $faqs : []);
+    }
+
+    /**
+     * @param  array<int, mixed>  $faqs
+     * @return list<array{question: string, answer: string, more: string}>
+     */
+    private static function normalize_faq_rows(array $faqs): array
+    {
+        if ($faqs === []) {
             return [];
         }
 

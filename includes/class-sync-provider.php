@@ -191,7 +191,8 @@ final class Sync_Provider
             'slug'               => (string) $term->slug,
             'permalink'          => $this->resolve_term_permalink($term),
             'post_content'       => $description,
-            'featured_image_url' => '',
+            'faqs'               => Faq_Shortcode::resolve_faqs_for_term($termId),
+            'featured_image_url' => $this->resolve_term_featured_image($termId),
             'product_gallery'    => [],
             'post_images'        => (new Post_Images_Extractor())->extract_from_content($description),
             'status'             => 'publish',
@@ -238,6 +239,7 @@ final class Sync_Provider
             'permalink'    => $this->resolve_post_permalink($post),
             'post_content' => (string) $post->post_content,
             'faqs'         => Faq_Shortcode::resolve_faqs_for_post((int) $post->ID),
+            'virtual_comments' => Virtual_Comments::get_virtual_items((int) $post->ID),
             'featured_image_url' => $featuredImageUrl,
             'product_gallery' => $productGallery,
             'post_images'     => $postImages,
@@ -307,5 +309,23 @@ final class Sync_Provider
         }
 
         return (string) $link;
+    }
+
+    /**
+     * WooCommerce / WP: term meta thumbnail_id.
+     */
+    private function resolve_term_featured_image(int $termId): string
+    {
+        $thumbId = (int) get_term_meta($termId, 'thumbnail_id', true);
+        if ($thumbId <= 0) {
+            return '';
+        }
+
+        $url = (string) wp_get_attachment_image_url($thumbId, 'medium');
+        if ($url === '') {
+            $url = (string) wp_get_attachment_image_url($thumbId, 'full');
+        }
+
+        return $url;
     }
 }

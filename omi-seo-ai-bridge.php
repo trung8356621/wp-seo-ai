@@ -1,12 +1,12 @@
 <?php
 /**
- * Plugin Name:       OmiChannel SEO AI Bridge
+ * Plugin Name:       TVH TVH SEO AI Bridge
  * Plugin URI:        https://example.com/omi-seo-ai-bridge
- * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung SEO AI.
- * Version:           1.0.1
+ * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
+ * Version:           1.0.3
  * Requires at least: 6.0
  * Requires PHP:      7.4
- * Author:            Omnichannel
+ * Author:            TVH
  * License:           GPL v2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       omi-seo-ai-bridge
@@ -20,7 +20,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.1');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.3');
 define('OMI_SEO_AI_BRIDGE_PATH', plugin_dir_path(__FILE__));
 define('OMI_SEO_AI_BRIDGE_URL', plugin_dir_url(__FILE__));
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
@@ -30,8 +30,10 @@ define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL', 'omi_seo_laravel_api_url');
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-seo-plugin-resolver.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-post-images-extractor.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-renamer.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-binary-replacer.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-sync-provider.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-comment-review-publisher.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-virtual-comments.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-controller.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-laravel-push-sync.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-faq-shortcode.php';
@@ -43,6 +45,7 @@ add_action('rest_api_init', static function (): void {
 add_action('init', static function (): void {
     \OmiSeoAiBridge\Laravel_Push_Sync::register();
     \OmiSeoAiBridge\Faq_Shortcode::register();
+    \OmiSeoAiBridge\Virtual_Comments::register();
 });
 
 /**
@@ -50,13 +53,12 @@ add_action('init', static function (): void {
  */
 add_action('admin_menu', static function (): void {
     add_menu_page(
-        __('SEO AI', 'omi-seo-ai-bridge'),
-        __('SEO AI', 'omi-seo-ai-bridge'),
+        __('TVH SEO AI', 'omi-seo-ai-bridge'),
+        __('TVH SEO AI', 'omi-seo-ai-bridge'),
         'manage_options',
         'omi-seo-ai',
         'omi_seo_ai_bridge_render_admin_page',
-        'dashicons-networking',
-        58
+        'dashicons-networking'
     );
 });
 
