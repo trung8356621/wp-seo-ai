@@ -13,6 +13,59 @@ if (! defined('ABSPATH')) {
  */
 final class Seo_Plugin_Resolver
 {
+    /**
+     * Thông tin plugin SEO cấp site (gọi một lần trước đồng bộ, không lưu theo từng bài).
+     *
+     * @return array{
+     *   active: string,
+     *   rank_math: array{installed: bool, version: string|null},
+     *   yoast: array{installed: bool, version: string|null},
+     *   meta_keys: array{post: array<string, array<int, string>>, term: array<string, array<int, string>>},
+     *   wordpress_version: string,
+     *   site_url: string,
+     *   bridge_version: string
+     * }
+     */
+    public static function site_info(): array
+    {
+        $rankMathInstalled = self::is_rank_math_active();
+        $yoastInstalled = self::is_yoast_active();
+
+        $active = 'none';
+        if ($rankMathInstalled) {
+            $active = 'rank_math';
+        } elseif ($yoastInstalled) {
+            $active = 'yoast';
+        }
+
+        return [
+            'active'            => $active,
+            'rank_math'         => [
+                'installed' => $rankMathInstalled,
+                'version'   => defined('RANK_MATH_VERSION') ? (string) RANK_MATH_VERSION : null,
+            ],
+            'yoast'             => [
+                'installed' => $yoastInstalled,
+                'version'   => defined('WPSEO_VERSION') ? (string) WPSEO_VERSION : null,
+            ],
+            'meta_keys'         => [
+                'post' => [
+                    'seo_title'        => ['rank_math_title', '_rank_math_title', '_yoast_wpseo_title'],
+                    'meta_description' => ['rank_math_description', '_rank_math_description', '_yoast_wpseo_metadesc'],
+                    'focus_keyword'    => ['rank_math_focus_keyword', '_rank_math_focus_keyword', '_yoast_wpseo_focuskw'],
+                ],
+                'term' => [
+                    'seo_title'        => ['rank_math_title', 'rank_math_seo_title', 'wpseo_title'],
+                    'meta_description' => ['rank_math_description', 'wpseo_desc'],
+                    'focus_keyword'    => ['rank_math_focus_keyword'],
+                ],
+            ],
+            'wordpress_version' => (string) get_bloginfo('version'),
+            'site_url'          => (string) home_url('/'),
+            'bridge_version'    => defined('OMI_SEO_AI_BRIDGE_VERSION') ? (string) OMI_SEO_AI_BRIDGE_VERSION : '',
+        ];
+    }
+
     public static function is_rank_math_active(): bool
     {
         return defined('RANK_MATH_VERSION')

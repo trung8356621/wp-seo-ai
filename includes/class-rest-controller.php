@@ -36,6 +36,12 @@ final class Rest_Controller
             ],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/site-info', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_site_info'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/terms/(?P<taxonomy>[a-z0-9_-]+)/(?P<id>\d+)', [
             'methods'             => WP_REST_Server::READABLE,
             'callback'            => [self::class, 'handle_term'],
@@ -851,6 +857,19 @@ final class Rest_Controller
                 'wp_post_type' => (string) ($mapped['wp_post_type'] ?? ''),
                 'faqs' => is_array($mapped['faqs'] ?? null) ? $mapped['faqs'] : [],
             ],
+        ], 200);
+    }
+
+    public static function handle_site_info(WP_REST_Request $request): WP_REST_Response
+    {
+        unset($request);
+
+        $info = Seo_Plugin_Resolver::site_info();
+
+        return new WP_REST_Response([
+            'success'   => true,
+            'message'   => 'Site SEO plugin info.',
+            'site_info' => $info,
         ], 200);
     }
 
