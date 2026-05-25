@@ -3,7 +3,7 @@
  * Plugin Name:       TVH TVH SEO AI Bridge
  * Plugin URI:        https://example.com/omi-seo-ai-bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.3
+ * Version:           1.0.4
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            TVH
@@ -20,7 +20,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.3');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.4');
 define('OMI_SEO_AI_BRIDGE_PATH', plugin_dir_path(__FILE__));
 define('OMI_SEO_AI_BRIDGE_URL', plugin_dir_url(__FILE__));
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
@@ -37,6 +37,11 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-virtual-comments.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-controller.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-laravel-push-sync.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-faq-shortcode.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-plugin-updater.php';
+
+add_action('plugins_loaded', static function (): void {
+    \OmiSeoAiBridge\Plugin_Updater::boot(__FILE__);
+}, 20);
 
 add_action('rest_api_init', static function (): void {
     \OmiSeoAiBridge\Rest_Controller::register();

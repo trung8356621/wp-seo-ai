@@ -355,23 +355,7 @@ final class Rest_Controller
             ], 400);
         }
 
-        $normalized = [];
-        foreach ($faqs as $faq) {
-            if (! is_array($faq)) {
-                continue;
-            }
-            $question = trim((string) ($faq['question'] ?? ''));
-            $answer = trim((string) ($faq['answer'] ?? ''));
-            $more = trim((string) ($faq['more'] ?? ''));
-            if ($question === '' || $answer === '') {
-                continue;
-            }
-            $normalized[] = [
-                'question' => $question,
-                'answer' => $answer,
-                'more' => $more,
-            ];
-        }
+        $normalized = Faq_Shortcode::normalize_faq_payload($faqs);
 
         Faq_Shortcode::store_faqs($postId, $normalized);
 
@@ -447,23 +431,7 @@ final class Rest_Controller
         $faqs = $body['faqs'] ?? [];
         $faqCount = 0;
         if (is_array($faqs)) {
-            $normalized = [];
-            foreach ($faqs as $faq) {
-                if (! is_array($faq)) {
-                    continue;
-                }
-                $question = trim((string) ($faq['question'] ?? ''));
-                $answer = trim((string) ($faq['answer'] ?? ''));
-                $more = trim((string) ($faq['more'] ?? ''));
-                if ($question === '' || $answer === '') {
-                    continue;
-                }
-                $normalized[] = [
-                    'question' => $question,
-                    'answer' => $answer,
-                    'more' => $more,
-                ];
-            }
+            $normalized = Faq_Shortcode::normalize_faq_payload($faqs);
             Faq_Shortcode::store_faqs($postId, $normalized);
             $faqCount = count($normalized);
 

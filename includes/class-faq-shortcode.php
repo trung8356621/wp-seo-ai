@@ -22,6 +22,44 @@ final class Faq_Shortcode
         add_shortcode('omi_faq', [self::class, 'render']);
 
         add_action('save_post', [self::class, 'ensure_shortcode_on_save'], 20, 3);
+        add_action('wp_enqueue_scripts', [self::class, 'enqueue_assets']);
+        add_filter('the_content', [self::class, 'append_faq_when_meta_without_shortcode'], 12);
+    }
+
+    /**
+     * Meta _omi_seo_faqs có dữ liệu nhưng post_content thiếu [omi_faq] → vẫn hiển thị FAQ.
+     */
+    public static function append_faq_when_meta_without_shortcode(string $content): string
+    {
+        if (! is_singular() || ! in_the_loop() || ! is_main_query()) {
+            return $content;
+        }
+
+        global $post;
+        if (! $post instanceof \WP_Post) {
+            return $content;
+        }
+
+        if (has_shortcode($content, 'omi_faq')) {
+            return $content;
+        }
+
+        $faqs = self::resolve_faqs_for_post((int) $post->ID);
+        if ($faqs === []) {
+            return $content;
+        }
+
+        return $content . self::render([]);
+    }
+
+    public static function enqueue_assets(): void
+    {
+        wp_enqueue_style(
+            'omi-seo-faq-accordion',
+            OMI_SEO_AI_BRIDGE_URL . 'assets/css/omi-faq-accordion.css',
+            [],
+            OMI_SEO_AI_BRIDGE_VERSION,
+        );
     }
 
     /**
@@ -36,46 +74,44 @@ final class Faq_Shortcode
             return '';
         }
 
-        $html = '<div class="omi-faq-container" style="margin-top: 30px;">';
-
+        $html = '<div class="omi-faq-container">';
         $schema = [
             '@context' => 'https://schema.org',
             '@type' => 'FAQPage',
             'mainEntity' => [],
         ];
 
-        foreach ($faqs as $faq) {
+        foreach ($faqs as $index => $faq) {
             if (! is_array($faq) || empty($faq['question']) || empty($faq['answer'])) {
                 continue;
             }
 
-            $q = esc_html((string) $faq['question']);
-            $a = wp_kses_post((string) $faq['answer']);
-            $m = wp_kses_post((string) ($faq['more'] ?? ''));
-            $answerHtml = preg_match('/<(p|div|ul|ol|blockquote|br|em|strong)\b/i', $a) === 1
-                ? $a
-                : nl2br($a, false);
-            $moreHtml = '';
-            if ($m !== '') {
-                $moreHtml = preg_match('/<(p|div|ul|ol|blockquote|br|em|strong|img)\b/i', $m) === 1
-                    ? $m
-                    : nl2br($m, false);
-            }
+            $questionRaw = trim((string) $faq['question']);
+            $question = esc_html(self::numbered_question_label($questionRaw, (int) $index));
+            $answerHtml = self::format_faq_html_field((string) $faq['answer']);
+            $moreHtml = trim((string) ($faq['more'] ?? ''));
+            $moreHtml = $moreHtml !== '' ? self::format_faq_html_field($moreHtml) : '';
 
-            $html .= '<details class="omi-faq-item" style="margin-bottom: 15px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; background: #fff;">';
-            $html .= '<summary style="font-weight: bold; cursor: pointer; font-size: 1.1em; color: #1f2937;">' . $q . '</summary>';
+            $openAttr = $index === 0 ? ' open' : '';
+            $html .= '<details class="omi-faq-item"' . $openAttr . '>';
+            $html .= '<summary class="omi-faq-item__summary">';
+            $html .= '<span class="omi-faq-item__chevron" aria-hidden="true"></span>';
+            $html .= '<span class="omi-faq-item__question">' . $question . '</span>';
+            $html .= '</summary>';
+            $html .= '<div class="omi-faq-item__body">';
             if ($moreHtml !== '') {
-                $html .= '<div style="margin-top: 12px; color: #4b5563; line-height: 1.6;">' . $moreHtml . '</div>';
+                $html .= '<div class="omi-faq-item__more">' . $moreHtml . '</div>';
             }
-            $html .= '<div style="margin-top: 15px; color: #4b5563; line-height: 1.6;">' . $answerHtml . '</div>';
+            $html .= '<div class="omi-faq-item__answer">' . $answerHtml . '</div>';
+            $html .= '</div>';
             $html .= '</details>';
 
             $schema['mainEntity'][] = [
                 '@type' => 'Question',
-                'name' => wp_strip_all_tags((string) $faq['question']),
+                'name' => wp_strip_all_tags($questionRaw),
                 'acceptedAnswer' => [
                     '@type' => 'Answer',
-                    'text' => wp_strip_all_tags($a),
+                    'text' => wp_strip_all_tags((string) $faq['answer']),
                 ],
             ];
         }
@@ -87,6 +123,29 @@ final class Faq_Shortcode
         }
 
         return $html;
+    }
+
+    private static function numbered_question_label(string $question, int $index): string
+    {
+        if (preg_match('/^\d+[\.\)]\s/u', $question) === 1) {
+            return $question;
+        }
+
+        return ($index + 1) . '. ' . $question;
+    }
+
+    private static function format_faq_html_field(string $raw): string
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '';
+        }
+
+        if (preg_match('/<(p|div|ul|ol|blockquote|br|em|strong|a)\b/i', $raw) === 1) {
+            return wp_kses_post($raw);
+        }
+
+        return nl2br(esc_html($raw), false);
     }
 
     public static function ensure_shortcode_on_save(int $postId, $post, bool $update): void
@@ -159,6 +218,15 @@ final class Faq_Shortcode
     }
 
     /**
+     * @param  array<int, mixed>|null  $faqs
+     * @return list<array{question: string, answer: string, more: string}>
+     */
+    public static function normalize_faq_payload(mixed $faqs): array
+    {
+        return is_array($faqs) ? self::normalize_faq_rows($faqs) : [];
+    }
+
+    /**
      * @param  list<array{question: string, answer: string, more?: string}>  $faqs
      */
     public static function store_faqs(int $postId, array $faqs): void
@@ -222,23 +290,69 @@ final class Faq_Shortcode
 
         $normalized = [];
         foreach ($faqs as $faq) {
-            if (! is_array($faq)) {
-                continue;
+            $row = self::normalize_faq_row($faq);
+            if ($row !== null) {
+                $normalized[] = $row;
             }
-
-            $question = trim((string) ($faq['question'] ?? ''));
-            $answer = trim((string) ($faq['answer'] ?? ''));
-            if ($question === '' || $answer === '') {
-                continue;
-            }
-
-            $normalized[] = [
-                'question' => $question,
-                'answer' => $answer,
-                'more' => trim((string) ($faq['more'] ?? '')),
-            ];
         }
 
         return $normalized;
+    }
+
+    /**
+     * @return array{question: string, answer: string, more: string}|null
+     */
+    private static function normalize_faq_row(mixed $faq): ?array
+    {
+        if (! is_array($faq)) {
+            return null;
+        }
+
+        $question = self::pick_faq_field($faq, ['question', 'q', 'title', 'name', 'label', 'heading']);
+        $answer = self::pick_faq_field($faq, ['answer', 'a', 'content', 'body', 'text', 'response', 'value']);
+        $more = self::pick_faq_field($faq, ['more', 'see_more', 'seeMore', 'xem_them', 'intro', 'lead']);
+
+        if ($question === '' && $answer === '') {
+            return null;
+        }
+
+        if ($question === '') {
+            $question = 'FAQ';
+        }
+
+        if ($answer === '' && $more !== '') {
+            $answer = $more;
+            $more = '';
+        }
+
+        if ($answer === '') {
+            return null;
+        }
+
+        return [
+            'question' => $question,
+            'answer' => $answer,
+            'more' => $more,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $faq
+     * @param  list<string>  $keys
+     */
+    private static function pick_faq_field(array $faq, array $keys): string
+    {
+        foreach ($keys as $key) {
+            if (! array_key_exists($key, $faq)) {
+                continue;
+            }
+
+            $value = trim((string) $faq[$key]);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
     }
 }
