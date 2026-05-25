@@ -24,6 +24,7 @@ final class Faq_Shortcode
         add_action('save_post', [self::class, 'ensure_shortcode_on_save'], 20, 3);
         add_action('wp_enqueue_scripts', [self::class, 'enqueue_assets']);
         add_filter('the_content', [self::class, 'append_faq_when_meta_without_shortcode'], 12);
+        add_filter('term_description', [self::class, 'append_term_faq_when_needed'], 12, 2);
     }
 
     /**
@@ -40,7 +41,11 @@ final class Faq_Shortcode
             return $content;
         }
 
-        if (has_shortcode($content, 'omi_faq')) {
+        if (
+            has_shortcode($content, 'omi_faq')
+            || str_contains($content, 'class="omi-faq-container"')
+            || str_contains($content, "class='omi-faq-container'")
+        ) {
             return $content;
         }
 
@@ -50,6 +55,40 @@ final class Faq_Shortcode
         }
 
         return $content . self::render([]);
+    }
+
+    /**
+     * Taxonomy description (vd product_cat) có thể không được do_shortcode bởi theme.
+     * Filter này đảm bảo [omi_faq] luôn render đúng và fallback append theo meta term.
+     */
+    public static function append_term_faq_when_needed(string $description, int $termId): string
+    {
+        if (! function_exists('is_tax') || (! is_tax() && ! is_category() && ! is_tag())) {
+            return $description;
+        }
+
+        if ($termId <= 0) {
+            return $description;
+        }
+
+        if (
+            str_contains($description, 'class="omi-faq-container"')
+            || str_contains($description, "class='omi-faq-container'")
+        ) {
+            return $description;
+        }
+
+        // Force chạy shortcode trong term description (nếu theme chưa xử lý).
+        if (has_shortcode($description, 'omi_faq')) {
+            return do_shortcode($description);
+        }
+
+        $faqs = self::resolve_faqs_for_term($termId);
+        if ($faqs === []) {
+            return $description;
+        }
+
+        return $description . self::render_term_faq($termId);
     }
 
     public static function enqueue_assets(): void
@@ -258,6 +297,64 @@ final class Faq_Shortcode
         }
 
         return self::normalize_faq_rows(is_array($faqs) ? $faqs : []);
+    }
+
+    private static function render_term_faq(int $termId): string
+    {
+        $faqs = self::resolve_faqs_for_term($termId);
+        if ($faqs === []) {
+            return '';
+        }
+
+        $html = '<div class="omi-faq-container">';
+        $schema = [
+            '@context' => 'https://schema.org',
+            '@type' => 'FAQPage',
+            'mainEntity' => [],
+        ];
+
+        foreach ($faqs as $index => $faq) {
+            if (! is_array($faq) || empty($faq['question']) || empty($faq['answer'])) {
+                continue;
+            }
+
+            $questionRaw = trim((string) $faq['question']);
+            $question = esc_html(self::numbered_question_label($questionRaw, (int) $index));
+            $answerHtml = self::format_faq_html_field((string) $faq['answer']);
+            $moreHtml = trim((string) ($faq['more'] ?? ''));
+            $moreHtml = $moreHtml !== '' ? self::format_faq_html_field($moreHtml) : '';
+
+            $openAttr = $index === 0 ? ' open' : '';
+            $html .= '<details class="omi-faq-item"' . $openAttr . '>';
+            $html .= '<summary class="omi-faq-item__summary">';
+            $html .= '<span class="omi-faq-item__chevron" aria-hidden="true"></span>';
+            $html .= '<span class="omi-faq-item__question">' . $question . '</span>';
+            $html .= '</summary>';
+            $html .= '<div class="omi-faq-item__body">';
+            if ($moreHtml !== '') {
+                $html .= '<div class="omi-faq-item__more">' . $moreHtml . '</div>';
+            }
+            $html .= '<div class="omi-faq-item__answer">' . $answerHtml . '</div>';
+            $html .= '</div>';
+            $html .= '</details>';
+
+            $schema['mainEntity'][] = [
+                '@type' => 'Question',
+                'name' => wp_strip_all_tags($questionRaw),
+                'acceptedAnswer' => [
+                    '@type' => 'Answer',
+                    'text' => wp_strip_all_tags((string) $faq['answer']),
+                ],
+            ];
+        }
+
+        $html .= '</div>';
+
+        if ($schema['mainEntity'] !== []) {
+            $html .= '<script type="application/ld+json">' . wp_json_encode($schema, JSON_UNESCAPED_UNICODE) . '</script>';
+        }
+
+        return $html;
     }
 
     /**

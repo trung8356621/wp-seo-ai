@@ -1,0 +1,16 @@
+# ==============================================================================
+# CURSOR SYSTEM RULE: AUTOMATIC WP PLUGIN VERSION INCREMENT
+# ==============================================================================
+
+# Target File: C:\work\wp-seo-ai\omi-seo-ai-bridge.php (or the main plugin header file)
+
+When making modifications, adding features, or fixing bugs in any file inside the "wp-seo-ai" directory:
+
+1. Always locate the main plugin file: "omi-seo-ai-bridge.php".
+2. Read the current version from the header comment line, for example:
+   * "Version: 1.0.4"
+3. Auto-increment this version number based on semantic versioning rules (Patch level by default, e.g. from 1.0.4 to 1.0.5) before writing or completing any code edits.
+4. Update the "Version" field in the comment block at the top of "omi-seo-ai-bridge.php" to match the new version.
+5. In your response chat, always state: "Đã tự động nâng cấp phiên bản lên <new_version> trong file omi-seo-ai-bridge.php".
+6. Remind the user to run the packaging PowerShell script:
+   * "Vui lòng thực thi lệnh: `.\compress_plugin.ps1` để đóng gói và đồng bộ bản cập nhật lên Laravel Update Server."
