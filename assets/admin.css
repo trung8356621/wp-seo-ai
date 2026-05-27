@@ -1,7 +1,219 @@
+/* TVH SEO AI Bridge – admin settings & welcome */
 
+.omi-seo-ai-bridge-wrap {
+    max-width: 720px;
+    margin: 20px 20px 20px 0;
+}
+
+.omi-seo-ai-bridge-card {
+    position: relative;
+    padding: 28px 32px 32px;
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.omi-seo-ai-bridge-card h2,
+.omi-seo-ai-bridge-card h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1d2327;
+    line-height: 1.3;
+}
+
+.omi-seo-ai-bridge-card__corner {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+}
+
+.omi-seo-ai-bridge-card__corner a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    color: #646970;
+    text-decoration: none;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.omi-seo-ai-bridge-card__corner a:hover {
+    background: #f0f0f1;
+    color: #2271b1;
+}
+
+.omi-seo-ai-bridge-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 16px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2271b1 0%, #135e96 100%);
+    color: #fff;
+}
+
+.omi-seo-ai-bridge-icon-wrap .dashicons {
+    width: 32px;
+    height: 32px;
+    font-size: 32px;
+}
+
+.omi-seo-ai-bridge-subtitle {
+    margin: 0 0 20px;
+    text-align: center;
+    font-size: 0.9375rem;
+    color: #646970;
+    line-height: 1.5;
+}
+
+.omi-seo-ai-bridge-status-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.omi-seo-ai-bridge-row--status .omi-seo-ai-bridge-status-row {
+    margin-bottom: 0;
+}
+
+.omi-seo-ai-bridge-status-label {
+    font-size: 0.875rem;
+    color: #50575e;
+}
+
+.omi-seo-ai-bridge-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.omi-seo-ai-bridge-badge__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.omi-seo-ai-bridge-badge--ok {
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+}
+
+.omi-seo-ai-bridge-badge--ok .omi-seo-ai-bridge-badge__dot {
+    background: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+}
+
+.omi-seo-ai-bridge-badge--off {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
+
+.omi-seo-ai-bridge-badge--off .omi-seo-ai-bridge-badge__dot {
+    background: #ef4444;
+}
+
+.omi-seo-ai-bridge-footnote {
+    margin: 16px 0 0;
+    text-align: center;
+    font-size: 0.75rem;
+    color: #a7aaad;
+}
+
+.omi-seo-ai-bridge-notice {
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border: 1px solid #c3e6cb;
+    border-radius: 6px;
+    background: #f0fdf4;
+    color: #166534;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
 
 .omi-seo-ai-bridge-notice--warn {
     background: #fffbeb;
     border-color: #fcd34d;
     color: #92400e;
+}
+
+.omi-seo-ai-bridge-notice--info {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: #1e40af;
+}
+
+.omi-seo-ai-bridge-form {
+    max-width: 100%;
+}
+
+.omi-seo-ai-bridge-row {
+    margin-bottom: 18px;
+}
+
+.omi-seo-ai-bridge-row label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #646970;
+}
+
+.omi-seo-ai-bridge-input {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    padding: 10px 12px;
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    color: #1d2327;
+    background: #fff;
+    border: 1px solid #8c8f94;
+    border-radius: 4px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.omi-seo-ai-bridge-input:focus {
+    border-color: #2271b1;
+    box-shadow: 0 0 0 1px #2271b1;
+    outline: 2px solid transparent;
+}
+
+.omi-seo-ai-bridge-submit-wrap {
+    margin-top: 8px;
+}
+
+.omi-seo-ai-bridge-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.omi-seo-ai-bridge-card .description {
+    font-size: 0.8125rem;
+    color: #646970;
+}
+
+.omi-seo-ai-bridge-card hr {
+    margin: 28px 0;
+    border: 0;
+    border-top: 1px solid #e5e7eb;
 }

@@ -220,6 +220,14 @@ final class Laravel_Push_Sync
             return ['success' => false, 'message' => $canPush['message']];
         }
 
+        if (function_exists('omi_seo_ai_bridge_laravel_localhost_mismatch') && omi_seo_ai_bridge_laravel_localhost_mismatch()) {
+            $warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warning')
+                ? omi_seo_ai_bridge_laravel_localhost_warning()
+                : 'Không thể dùng localhost khi WordPress chạy trên hosting production.';
+
+            return ['success' => false, 'message' => $warning];
+        }
+
         $readToken = trim((string) get_option(OMI_SEO_AI_BRIDGE_OPTION_READ, ''));
         $url = omi_seo_ai_bridge_laravel_api_url() . '/api/seo-wp-bridge/ping?site_url=' . rawurlencode(home_url('/'));
 
@@ -242,6 +250,14 @@ final class Laravel_Push_Sync
 
         if (is_wp_error($response)) {
             $message = 'Không kết nối được Laravel: ' . $response->get_error_message();
+            if (function_exists('omi_seo_ai_bridge_laravel_localhost_mismatch') && omi_seo_ai_bridge_laravel_localhost_mismatch()) {
+                $hint = function_exists('omi_seo_ai_bridge_laravel_localhost_warning')
+                    ? omi_seo_ai_bridge_laravel_localhost_warning()
+                    : '';
+                if ($hint !== '') {
+                    $message .= ' ' . $hint;
+                }
+            }
 
             return ['success' => false, 'message' => $message];
         }
@@ -369,6 +385,14 @@ final class Laravel_Push_Sync
                 'ok' => false,
                 'message' => 'Chưa nhập LARAVEL API URL (vd: http://127.0.0.1:8000).',
             ];
+        }
+
+        if (function_exists('omi_seo_ai_bridge_laravel_localhost_mismatch') && omi_seo_ai_bridge_laravel_localhost_mismatch()) {
+            $warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warning')
+                ? omi_seo_ai_bridge_laravel_localhost_warning()
+                : 'LARAVEL API URL localhost không dùng được trên WordPress production.';
+
+            return ['ok' => false, 'message' => $warning];
         }
 
         return ['ok' => true, 'message' => ''];

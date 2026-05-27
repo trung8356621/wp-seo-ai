@@ -1,16 +1,44 @@
+<?php
+declare(strict_types=1);
+
+if (! defined('ABSPATH')) {
+    exit;
+}
 
 $read_value    = (string) get_option(OMI_SEO_AI_BRIDGE_OPTION_READ, '');
 $write_value   = (string) get_option(OMI_SEO_AI_BRIDGE_OPTION_WRITE, '');
 $laravel_value = (string) get_option(OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL, '');
 $auto_push     = function_exists('omi_seo_ai_bridge_auto_push_enabled') && omi_seo_ai_bridge_auto_push_enabled();
-$show_saved    = isset($_GET['updated']) && $_GET['updated'] === '1';
+$show_saved    = isset($_GET['updated']) && sanitize_key((string) wp_unslash($_GET['updated'])) === '1';
 $last_push_at  = (string) get_option('omi_seo_last_push_at', '');
 $last_push_ok  = (string) get_option('omi_seo_last_push_success', '');
 $last_push_msg = (string) get_option('omi_seo_last_push_message', '');
-$test_result   = isset($_GET['test_result']) ? sanitize_key(wp_unslash($_GET['test_result'])) : '';
-$test_msg      = isset($_GET['test_msg']) ? sanitize_text_field(wp_unslash(rawurldecode((string) $_GET['test_msg']))) : '';
-$push_result   = isset($_GET['push_result']) ? sanitize_key(wp_unslash($_GET['push_result'])) : '';
-$push_msg      = isset($_GET['push_msg']) ? sanitize_text_field(wp_unslash(rawurldecode((string) $_GET['push_msg']))) : '';
+$test_result   = isset($_GET['test_result']) ? sanitize_key((string) wp_unslash($_GET['test_result'])) : '';
+$test_msg      = isset($_GET['test_msg']) ? sanitize_text_field((string) wp_unslash(rawurldecode((string) $_GET['test_msg']))) : '';
+$push_result   = isset($_GET['push_result']) ? sanitize_key((string) wp_unslash($_GET['push_result'])) : '';
+$push_msg      = isset($_GET['push_msg']) ? sanitize_text_field((string) wp_unslash(rawurldecode((string) $_GET['push_msg']))) : '';
+$updatecheck_result = isset($_GET['updatecheck_result']) ? sanitize_key((string) wp_unslash($_GET['updatecheck_result'])) : '';
+$updatecheck_msg = isset($_GET['updatecheck_msg']) ? sanitize_text_field((string) wp_unslash(rawurldecode((string) $_GET['updatecheck_msg']))) : '';
+$localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warning')
+    ? omi_seo_ai_bridge_laravel_localhost_warning()
+    : '';
+?>
+
+<div class="wrap omi-seo-ai-bridge-wrap">
+    <div class="omi-seo-ai-bridge-card">
+        <h2 style="margin:0 0 14px;"><?php esc_html_e('Cài đặt kết nối Laravel', 'omi-seo-ai-bridge'); ?></h2>
+
+        <?php if ($localhost_warning !== '') : ?>
+            <div class="omi-seo-ai-bridge-notice omi-seo-ai-bridge-notice--info" role="alert">
+                <?php echo esc_html($localhost_warning); ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($show_saved) : ?>
+            <div class="omi-seo-ai-bridge-notice" role="status">
+                <?php esc_html_e('Đã lưu API key và URL Laravel.', 'omi-seo-ai-bridge'); ?>
+            </div>
+        <?php endif; ?>
 
         <?php if ($test_result !== '') : ?>
             <div class="omi-seo-ai-bridge-notice<?php echo $test_result === 'ok' ? '' : ' omi-seo-ai-bridge-notice--warn'; ?>" role="status">
@@ -21,6 +49,12 @@ $push_msg      = isset($_GET['push_msg']) ? sanitize_text_field(wp_unslash(rawur
         <?php if ($push_result !== '') : ?>
             <div class="omi-seo-ai-bridge-notice<?php echo $push_result === 'ok' ? '' : ' omi-seo-ai-bridge-notice--warn'; ?>" role="status">
                 <?php echo esc_html($push_msg !== '' ? $push_msg : ($push_result === 'ok' ? __('Đẩy thành công.', 'omi-seo-ai-bridge') : __('Đẩy thất bại.', 'omi-seo-ai-bridge'))); ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($updatecheck_result !== '') : ?>
+            <div class="omi-seo-ai-bridge-notice<?php echo $updatecheck_result === 'ok' ? '' : ' omi-seo-ai-bridge-notice--warn'; ?>" role="status">
+                <?php echo esc_html($updatecheck_msg !== '' ? $updatecheck_msg : __('Đã chạy kiểm tra update thủ công.', 'omi-seo-ai-bridge')); ?>
             </div>
         <?php endif; ?>
 
@@ -38,6 +72,35 @@ $push_msg      = isset($_GET['push_msg']) ? sanitize_text_field(wp_unslash(rawur
             </p>
         <?php endif; ?>
 
+        <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=settings')); ?>" class="omi-seo-ai-bridge-form">
+            <?php wp_nonce_field('omi_seo_ai_bridge_save_settings'); ?>
+
+            <div class="omi-seo-ai-bridge-row">
+                <label for="omi_seo_read_token"><?php esc_html_e('API READ TOKEN', 'omi-seo-ai-bridge'); ?></label>
+                <input
+                    type="text"
+                    name="omi_seo_read_token"
+                    id="omi_seo_read_token"
+                    class="omi-seo-ai-bridge-input"
+                    value="<?php echo esc_attr($read_value); ?>"
+                    autocomplete="off"
+                    spellcheck="false"
+                />
+            </div>
+
+            <div class="omi-seo-ai-bridge-row">
+                <label for="omi_seo_write_token"><?php esc_html_e('API WRITE TOKEN', 'omi-seo-ai-bridge'); ?></label>
+                <input
+                    type="text"
+                    name="omi_seo_write_token"
+                    id="omi_seo_write_token"
+                    class="omi-seo-ai-bridge-input"
+                    value="<?php echo esc_attr($write_value); ?>"
+                    autocomplete="off"
+                    spellcheck="false"
+                />
+            </div>
+
             <div class="omi-seo-ai-bridge-row">
                 <label for="omi_seo_laravel_api_url"><?php esc_html_e('LARAVEL API URL', 'omi-seo-ai-bridge'); ?></label>
                 <input
@@ -51,7 +114,7 @@ $push_msg      = isset($_GET['push_msg']) ? sanitize_text_field(wp_unslash(rawur
                     spellcheck="false"
                 />
                 <p class="description" style="margin-top: 8px;">
-                    <?php esc_html_e('Khi tạo hoặc cập nhật bài viết/trang/sản phẩm, plugin tự đẩy sang Laravel (dùng Read token).', 'omi-seo-ai-bridge'); ?>
+                    <?php esc_html_e('Production phải dùng domain/public URL của Laravel, không dùng localhost.', 'omi-seo-ai-bridge'); ?>
                 </p>
             </div>
 
@@ -72,19 +135,35 @@ $push_msg      = isset($_GET['push_msg']) ? sanitize_text_field(wp_unslash(rawur
                 </div>
             </div>
 
+            <div class="omi-seo-ai-bridge-submit-wrap">
+                <button type="submit" name="omi_seo_save_settings" value="1" class="button button-primary">
+                    <?php esc_html_e('Cập nhật API key', 'omi-seo-ai-bridge'); ?>
+                </button>
+            </div>
+        </form>
+
         <hr style="margin: 28px 0; border: 0; border-top: 1px solid #e5e7eb;" />
 
         <h3 style="margin: 0 0 12px;"><?php esc_html_e('Kiểm tra đồng bộ Laravel', 'omi-seo-ai-bridge'); ?></h3>
         <p class="description" style="margin-bottom: 16px;">
-            <?php esc_html_e('Dùng http://127.0.0.1:8000 nếu Laravel chạy php artisan serve. Read token phải trùng domain .test trên Laravel.', 'omi-seo-ai-bridge'); ?>
+            <?php esc_html_e('Dùng http://127.0.0.1:8000 chỉ khi WordPress và Laravel cùng máy. Production phải dùng URL public.', 'omi-seo-ai-bridge'); ?>
         </p>
 
-        <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=settings')); ?>" style="margin-bottom: 12px;">
-            <?php wp_nonce_field('omi_seo_ai_bridge_save_settings'); ?>
-            <button type="submit" name="omi_seo_test_laravel" value="1" class="button button-secondary">
-                <?php esc_html_e('Kiểm tra kết nối Laravel', 'omi-seo-ai-bridge'); ?>
-            </button>
-        </form>
+        <div class="omi-seo-ai-bridge-actions">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=settings')); ?>">
+                <?php wp_nonce_field('omi_seo_ai_bridge_save_settings'); ?>
+                <button type="submit" name="omi_seo_test_laravel" value="1" class="button button-secondary">
+                    <?php esc_html_e('Kiểm tra kết nối Laravel', 'omi-seo-ai-bridge'); ?>
+                </button>
+            </form>
+
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=settings')); ?>">
+                <?php wp_nonce_field('omi_seo_ai_bridge_save_settings'); ?>
+                <button type="submit" name="omi_seo_manual_check_update" value="1" class="button button-secondary">
+                    <?php esc_html_e('Check update thủ công', 'omi-seo-ai-bridge'); ?>
+                </button>
+            </form>
+        </div>
 
         <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=settings')); ?>" class="omi-seo-ai-bridge-form" style="max-width: 420px;">
             <?php wp_nonce_field('omi_seo_ai_bridge_save_settings'); ?>
@@ -105,3 +184,5 @@ $push_msg      = isset($_GET['push_msg']) ? sanitize_text_field(wp_unslash(rawur
                 </button>
             </div>
         </form>
+    </div>
+</div>

@@ -92,6 +92,12 @@ final class Rest_Controller
             ],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/attachments/import', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_import_attachment'],
+            'permission_callback' => [self::class, 'authorize_write'],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/comment-reviews', [
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => [self::class, 'handle_publish_comment_reviews'],
@@ -250,6 +256,122 @@ final class Rest_Controller
         $status = ($result['success'] ?? false) ? 200 : 422;
 
         return new WP_REST_Response($result, $status);
+    }
+
+    public static function handle_import_attachment(WP_REST_Request $request): WP_REST_Response
+    {
+        $title = trim((string) $request->get_param('title'));
+        $slug = sanitize_title((string) $request->get_param('slug'));
+        $altText = trim((string) $request->get_param('alt_text'));
+        $sourceUrl = trim((string) $request->get_param('source_url'));
+
+        $resolved = self::resolve_attachment_upload_temp_file($request);
+        $tempPath = '';
+        $mime = '';
+        $unlinkTemp = false;
+
+        if ($resolved !== null) {
+            [$tempPath, $mime, $unlinkTemp] = $resolved;
+        } elseif ($sourceUrl !== '') {
+            if (! function_exists('download_url')) {
+                require_once ABSPATH . 'wp-admin/includes/file.php';
+            }
+            $downloaded = download_url($sourceUrl, 60);
+            if (! is_wp_error($downloaded) && is_string($downloaded) && is_file($downloaded)) {
+                $tempPath = $downloaded;
+                $mime = '';
+                $unlinkTemp = true;
+            }
+        }
+
+        if ($tempPath === '' || ! is_file($tempPath)) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Thiếu file ảnh (multipart field "file"/"image") hoặc source_url hợp lệ.',
+            ], 400);
+        }
+
+        try {
+            if (! function_exists('wp_handle_sideload')) {
+                require_once ABSPATH . 'wp-admin/includes/file.php';
+            }
+            if (! function_exists('wp_insert_attachment')) {
+                require_once ABSPATH . 'wp-admin/includes/media.php';
+            }
+            if (! function_exists('wp_generate_attachment_metadata')) {
+                require_once ABSPATH . 'wp-admin/includes/image.php';
+            }
+
+            $extension = pathinfo($tempPath, PATHINFO_EXTENSION);
+            if (! is_string($extension) || $extension === '') {
+                $extension = 'jpg';
+            }
+            $filename = ($slug !== '' ? $slug : 'seo-media-' . time()) . '.' . $extension;
+
+            $fileArray = [
+                'name' => $filename,
+                'tmp_name' => $tempPath,
+                'error' => 0,
+                'size' => (int) filesize($tempPath),
+            ];
+            if ($mime !== '') {
+                $fileArray['type'] = $mime;
+            }
+
+            $sideload = wp_handle_sideload($fileArray, [
+                'test_form' => false,
+            ]);
+
+            if (! is_array($sideload) || ! empty($sideload['error'])) {
+                return new WP_REST_Response([
+                    'success' => false,
+                    'message' => 'Không tải được file vào media library: ' . (string) ($sideload['error'] ?? 'unknown'),
+                ], 422);
+            }
+
+            $attachment = [
+                'post_mime_type' => (string) ($sideload['type'] ?? $mime ?: 'image/jpeg'),
+                'post_title' => $title !== '' ? $title : pathinfo($filename, PATHINFO_FILENAME),
+                'post_status' => 'inherit',
+            ];
+            if ($slug !== '') {
+                $attachment['post_name'] = $slug;
+            }
+
+            $attachmentId = wp_insert_attachment($attachment, (string) $sideload['file']);
+            if (is_wp_error($attachmentId) || (int) $attachmentId <= 0) {
+                return new WP_REST_Response([
+                    'success' => false,
+                    'message' => is_wp_error($attachmentId)
+                        ? $attachmentId->get_error_message()
+                        : 'Không tạo được attachment.',
+                ], 422);
+            }
+
+            $meta = wp_generate_attachment_metadata((int) $attachmentId, (string) $sideload['file']);
+            if (is_array($meta)) {
+                wp_update_attachment_metadata((int) $attachmentId, $meta);
+            }
+
+            if ($altText !== '') {
+                update_post_meta((int) $attachmentId, '_wp_attachment_image_alt', $altText);
+            }
+
+            $url = wp_get_attachment_url((int) $attachmentId);
+            $post = get_post((int) $attachmentId);
+
+            return new WP_REST_Response([
+                'success' => true,
+                'message' => 'Đã import ảnh vào WordPress.',
+                'attachment_id' => (int) $attachmentId,
+                'url' => is_string($url) ? $url : '',
+                'slug' => $post instanceof \WP_Post ? (string) $post->post_name : '',
+            ], 200);
+        } finally {
+            if ($unlinkTemp && is_file($tempPath)) {
+                @unlink($tempPath);
+            }
+        }
     }
 
     /**
