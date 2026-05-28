@@ -61,12 +61,13 @@ final class Faq_Shortcode
      * Taxonomy description (vd product_cat) có thể không được do_shortcode bởi theme.
      * Filter này đảm bảo [omi_faq] luôn render đúng và fallback append theo meta term.
      */
-    public static function append_term_faq_when_needed(string $description, int $termId): string
+    public static function append_term_faq_when_needed(string $description, $term = null): string
     {
         if (! function_exists('is_tax') || (! is_tax() && ! is_category() && ! is_tag())) {
             return $description;
         }
 
+        $termId = self::resolve_term_id($term);
         if ($termId <= 0) {
             return $description;
         }
@@ -240,12 +241,6 @@ final class Faq_Shortcode
      */
     private static function resolve_faqs_for_render_context(): array
     {
-        global $post;
-
-        if ($post instanceof \WP_Post) {
-            return self::resolve_faqs_for_post((int) $post->ID);
-        }
-
         if (function_exists('is_tax') && (is_tax() || is_category() || is_tag())) {
             $term = get_queried_object();
             if ($term instanceof \WP_Term) {
@@ -253,7 +248,34 @@ final class Faq_Shortcode
             }
         }
 
+        global $post;
+
+        if ($post instanceof \WP_Post) {
+            return self::resolve_faqs_for_post((int) $post->ID);
+        }
+
         return [];
+    }
+
+    /**
+     * @param  mixed  $term
+     */
+    private static function resolve_term_id($term): int
+    {
+        if ($term instanceof \WP_Term) {
+            return (int) $term->term_id;
+        }
+
+        if (is_numeric($term)) {
+            return (int) $term;
+        }
+
+        $queried = get_queried_object();
+        if ($queried instanceof \WP_Term) {
+            return (int) $queried->term_id;
+        }
+
+        return 0;
     }
 
     /**
