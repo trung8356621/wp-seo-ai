@@ -309,6 +309,184 @@ final class Seo_Plugin_Resolver
     }
 
     /**
+     * Ghi SEO title, meta description, focus keyword lên post (Rank Math hoặc Yoast).
+     *
+     * @param  array<string, mixed>  $seo
+     */
+    public static function apply_to_post(int $postId, array $seo): bool
+    {
+        if ($postId <= 0 || $seo === []) {
+            return false;
+        }
+
+        $seoTitle = array_key_exists('seo_title', $seo)
+            ? trim((string) $seo['seo_title'])
+            : null;
+        $metaDescription = array_key_exists('meta_description', $seo)
+            ? trim((string) $seo['meta_description'])
+            : null;
+        $focusKeyword = array_key_exists('focus_keyword', $seo)
+            ? trim((string) $seo['focus_keyword'])
+            : null;
+
+        if ($seoTitle === null && $metaDescription === null && $focusKeyword === null) {
+            return false;
+        }
+
+        if (self::is_rank_math_active()) {
+            return self::apply_rank_math_post($postId, $seoTitle, $metaDescription, $focusKeyword);
+        }
+
+        if (self::is_yoast_active()) {
+            return self::apply_yoast_post($postId, $seoTitle, $metaDescription, $focusKeyword);
+        }
+
+        return false;
+    }
+
+    /**
+     * Ghi SEO title, meta description, focus keyword lên term taxonomy (Rank Math hoặc Yoast).
+     *
+     * @param  array<string, mixed>  $seo
+     */
+    public static function apply_to_term(int $termId, array $seo): bool
+    {
+        if ($termId <= 0 || $seo === []) {
+            return false;
+        }
+
+        $seoTitle = array_key_exists('seo_title', $seo)
+            ? trim((string) $seo['seo_title'])
+            : null;
+        $metaDescription = array_key_exists('meta_description', $seo)
+            ? trim((string) $seo['meta_description'])
+            : null;
+        $focusKeyword = array_key_exists('focus_keyword', $seo)
+            ? trim((string) $seo['focus_keyword'])
+            : null;
+
+        if ($seoTitle === null && $metaDescription === null && $focusKeyword === null) {
+            return false;
+        }
+
+        if (self::is_rank_math_active()) {
+            return self::apply_rank_math_term($termId, $seoTitle, $metaDescription, $focusKeyword);
+        }
+
+        if (self::is_yoast_active()) {
+            return self::apply_yoast_term($termId, $seoTitle, $metaDescription, $focusKeyword);
+        }
+
+        return false;
+    }
+
+    private static function apply_rank_math_post(
+        int $postId,
+        ?string $seoTitle,
+        ?string $metaDescription,
+        ?string $focusKeyword,
+    ): bool {
+        $applied = false;
+
+        if ($seoTitle !== null) {
+            update_post_meta($postId, 'rank_math_title', $seoTitle);
+            update_post_meta($postId, '_rank_math_title', $seoTitle);
+            $applied = true;
+        }
+
+        if ($metaDescription !== null) {
+            update_post_meta($postId, 'rank_math_description', $metaDescription);
+            update_post_meta($postId, '_rank_math_description', $metaDescription);
+            $applied = true;
+        }
+
+        if ($focusKeyword !== null) {
+            update_post_meta($postId, 'rank_math_focus_keyword', $focusKeyword);
+            update_post_meta($postId, '_rank_math_focus_keyword', $focusKeyword);
+            if (class_exists('\RankMath\Helper')) {
+                \RankMath\Helper::update_post_meta('focus_keyword', $postId, $focusKeyword);
+            }
+            $applied = true;
+        }
+
+        return $applied;
+    }
+
+    private static function apply_yoast_post(
+        int $postId,
+        ?string $seoTitle,
+        ?string $metaDescription,
+        ?string $focusKeyword,
+    ): bool {
+        $applied = false;
+
+        if ($seoTitle !== null) {
+            update_post_meta($postId, '_yoast_wpseo_title', $seoTitle);
+            $applied = true;
+        }
+
+        if ($metaDescription !== null) {
+            update_post_meta($postId, '_yoast_wpseo_metadesc', $metaDescription);
+            $applied = true;
+        }
+
+        if ($focusKeyword !== null) {
+            update_post_meta($postId, '_yoast_wpseo_focuskw', $focusKeyword);
+            $applied = true;
+        }
+
+        return $applied;
+    }
+
+    private static function apply_rank_math_term(
+        int $termId,
+        ?string $seoTitle,
+        ?string $metaDescription,
+        ?string $focusKeyword,
+    ): bool {
+        $applied = false;
+
+        if ($seoTitle !== null) {
+            update_term_meta($termId, 'rank_math_title', $seoTitle);
+            update_term_meta($termId, 'rank_math_seo_title', $seoTitle);
+            $applied = true;
+        }
+
+        if ($metaDescription !== null) {
+            update_term_meta($termId, 'rank_math_description', $metaDescription);
+            $applied = true;
+        }
+
+        if ($focusKeyword !== null) {
+            update_term_meta($termId, 'rank_math_focus_keyword', $focusKeyword);
+            $applied = true;
+        }
+
+        return $applied;
+    }
+
+    private static function apply_yoast_term(
+        int $termId,
+        ?string $seoTitle,
+        ?string $metaDescription,
+        ?string $focusKeyword,
+    ): bool {
+        $applied = false;
+
+        if ($seoTitle !== null) {
+            update_term_meta($termId, 'wpseo_title', $seoTitle);
+            $applied = true;
+        }
+
+        if ($metaDescription !== null) {
+            update_term_meta($termId, 'wpseo_desc', $metaDescription);
+            $applied = true;
+        }
+
+        return $applied;
+    }
+
+    /**
      * @return array{plugin:string,seo_title:string,meta_description:string,focus_keyword:string}
      */
     private static function empty_payload(): array

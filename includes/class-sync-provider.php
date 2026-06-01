@@ -229,8 +229,11 @@ final class Sync_Provider
 
         $postImages = (new Post_Images_Extractor())->extract_from_content((string) $post->post_content);
 
+        $postId = (int) $post->ID;
+        $woocommerce = $wpPostType === 'product' ? $this->resolve_woocommerce_payload($postId) : [];
+
         return [
-            'wp_id'        => (int) $post->ID,
+            'wp_id'        => $postId,
             'type'         => $seoType,
             'wp_post_type' => $wpPostType,
             'wp_entity'    => 'post',
@@ -238,8 +241,10 @@ final class Sync_Provider
             'slug'         => (string) $post->post_name,
             'permalink'    => $this->resolve_post_permalink($post),
             'post_content' => (string) $post->post_content,
-            'faqs'         => Faq_Shortcode::resolve_faqs_for_post((int) $post->ID),
-            'virtual_comments' => Virtual_Comments::get_virtual_items((int) $post->ID),
+            'faqs'         => Faq_Shortcode::resolve_faqs_for_post($postId),
+            'virtual_comments' => Virtual_Comments::get_virtual_items($postId),
+            'schema_json_ld' => Schema_Ld_Exporter::for_post($postId),
+            'woocommerce'    => $woocommerce,
             'featured_image_url' => $featuredImageUrl,
             'product_gallery' => $productGallery,
             'post_images'     => $postImages,
@@ -309,6 +314,44 @@ final class Sync_Provider
         }
 
         return (string) $link;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolve_woocommerce_payload(int $postId): array
+    {
+        if (! function_exists('wc_get_product')) {
+            return [];
+        }
+
+        $product = wc_get_product($postId);
+        if (! $product instanceof \WC_Product) {
+            return [];
+        }
+
+        $currency = function_exists('get_woocommerce_currency')
+            ? (string) get_woocommerce_currency()
+            : 'VND';
+
+        $payload = [
+            'currency'      => $currency,
+            'price'         => $product->get_price(),
+            'regular_price' => $product->get_regular_price(),
+            'sale_price'    => $product->get_sale_price(),
+            'in_stock'      => $product->is_in_stock(),
+        ];
+
+        if ($product->is_type('variable')) {
+            $prices = $product->get_variation_prices();
+            $priceList = is_array($prices['price'] ?? null) ? array_filter(array_map('floatval', $prices['price'])) : [];
+            if ($priceList !== []) {
+                $payload['min_price'] = (string) min($priceList);
+                $payload['max_price'] = (string) max($priceList);
+            }
+        }
+
+        return $payload;
     }
 
     /**

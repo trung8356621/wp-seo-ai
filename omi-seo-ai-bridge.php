@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.11
+ * Version:           1.0.15
  * Author:            TVH
  */
 
@@ -12,7 +12,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.11');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.15');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL', 'omi_seo_laravel_api_url');
@@ -26,7 +26,9 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-renamer.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-binary-replacer.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-sync-provider.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-comment-review-publisher.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-schema-ld-exporter.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-virtual-comments.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-debug.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-controller.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-laravel-push-sync.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-faq-shortcode.php';
@@ -37,6 +39,7 @@ add_action('plugins_loaded', static function (): void {
 }, 20);
 
 add_action('rest_api_init', static function (): void {
+    \OmiSeoAiBridge\Rest_Debug::register_fatal_logger();
     \OmiSeoAiBridge\Rest_Controller::register();
 });
 
@@ -130,6 +133,8 @@ add_action('admin_init', static function (): void {
         update_option(OMI_SEO_AI_BRIDGE_OPTION_READ, $readToken, false);
         update_option(OMI_SEO_AI_BRIDGE_OPTION_WRITE, $writeToken, false);
         update_option(OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL, $laravelUrl, false);
+        update_option('omi_seo_ai_rest_log', isset($_POST['omi_seo_rest_log']) ? '1' : '0', false);
+        update_option('omi_seo_ai_rest_debug', isset($_POST['omi_seo_rest_debug']) ? '1' : '0', false);
 
         wp_safe_redirect(add_query_arg([
             'page' => 'omi-seo-ai',

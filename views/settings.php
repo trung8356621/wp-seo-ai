@@ -118,6 +118,38 @@ $localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warnin
                 </p>
             </div>
 
+            <?php
+            $rest_log_enabled = (bool) get_option('omi_seo_ai_rest_log', true);
+            $rest_debug_enabled = (bool) get_option('omi_seo_ai_rest_debug', false);
+            $rest_log_path = class_exists(\OmiSeoAiBridge\Rest_Debug::class)
+                ? \OmiSeoAiBridge\Rest_Debug::log_path()
+                : '';
+            ?>
+            <div class="omi-seo-ai-bridge-row">
+                <label><?php esc_html_e('REST debug (OMI SEO AI)', 'omi-seo-ai-bridge'); ?></label>
+                <label style="display:block;margin-bottom:6px;">
+                    <input type="checkbox" name="omi_seo_rest_log" value="1" <?php checked($rest_log_enabled); ?> />
+                    <?php esc_html_e('Ghi log REST vào wp-content/omi-seo-ai-rest.log', 'omi-seo-ai-bridge'); ?>
+                </label>
+                <label style="display:block;">
+                    <input type="checkbox" name="omi_seo_rest_debug" value="1" <?php checked($rest_debug_enabled); ?> />
+                    <?php esc_html_e('Trả chi tiết lỗi JSON khi WP_DEBUG hoặc bật tùy chọn này', 'omi-seo-ai-bridge'); ?>
+                </label>
+                <?php if ($rest_log_path !== '') : ?>
+                    <p class="description" style="margin-top: 8px;">
+                        <?php
+                        echo esc_html(
+                            sprintf(
+                                /* translators: %s: log file path */
+                                __('Log file: %s', 'omi-seo-ai-bridge'),
+                                $rest_log_path,
+                            ),
+                        );
+                        ?>
+                    </p>
+                <?php endif; ?>
+            </div>
+
             <div class="omi-seo-ai-bridge-row omi-seo-ai-bridge-row--status">
                 <label><?php esc_html_e('Tự đồng bộ khi lưu WP', 'omi-seo-ai-bridge'); ?></label>
                 <div class="omi-seo-ai-bridge-status-row">

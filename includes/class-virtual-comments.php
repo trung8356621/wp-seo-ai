@@ -18,15 +18,52 @@ final class Virtual_Comments
     /** @var array<int, int> */
     private static array $ratings = [];
 
+    /** @var list<int> */
+    private static array $pendingWcTransientFlush = [];
+
+    /** @var array<int, \WP_Comment> */
+    private static array $virtualCommentCache = [];
+
     public static function register(): void
     {
+        add_action('shutdown', [self::class, 'flush_pending_wc_transients'], 99);
+
+        // Sản phẩm WooCommerce: render từ meta qua template riêng, không inject wp_comments.
+        add_filter('woocommerce_locate_template', [self::class, 'locate_virtual_product_reviews_template'], 20, 3);
+
         add_filter('comments_array', [self::class, 'inject_virtual_comments'], 10, 2);
+        add_filter('get_comment', [self::class, 'filter_get_comment'], 10, 2);
         add_filter('get_comment_metadata', [self::class, 'inject_virtual_comment_rating'], 10, 4);
         add_filter('get_comments_number', [self::class, 'adjust_comments_number'], 10, 2);
 
         add_filter('woocommerce_product_get_review_count', [self::class, 'adjust_woocommerce_review_count'], 10, 2);
         add_filter('woocommerce_product_get_rating_count', [self::class, 'adjust_woocommerce_rating_count'], 10, 2);
         add_filter('woocommerce_product_get_average_rating', [self::class, 'adjust_woocommerce_average_rating'], 10, 2);
+    }
+
+    /**
+     * @param  string  $template
+     * @param  string  $template_name
+     * @param  string  $template_path
+     */
+    public static function locate_virtual_product_reviews_template($template, $template_name, $template_path)
+    {
+        if ($template_name !== 'single-product-reviews.php') {
+            return $template;
+        }
+
+        $postId = (int) get_the_ID();
+        if ($postId <= 0 || get_post_type($postId) !== 'product') {
+            return $template;
+        }
+
+        if (self::get_virtual_items($postId) === []) {
+            return $template;
+        }
+
+        $custom = OMI_SEO_AI_BRIDGE_PATH . 'templates/woocommerce/single-product-reviews-virtual.php';
+
+        return is_readable($custom) ? $custom : $template;
     }
 
     /**
@@ -45,10 +82,21 @@ final class Virtual_Comments
         }
 
         $normalized = self::normalize_items($items, $post->post_type === 'product', $postId);
-        update_post_meta($postId, self::META_KEY, wp_json_encode($normalized, JSON_UNESCAPED_UNICODE));
+
+        $encoded = wp_json_encode($normalized, JSON_UNESCAPED_UNICODE);
+        if (! is_string($encoded)) {
+            return [
+                'success' => false,
+                'count'   => 0,
+                'message' => 'JSON encode failed for virtual comments.',
+            ];
+        }
+
+        update_post_meta($postId, self::META_KEY, $encoded);
+        clean_post_cache($postId);
 
         if ($post->post_type === 'product' && function_exists('wc_delete_product_transients')) {
-            wc_delete_product_transients($postId);
+            self::$pendingWcTransientFlush[] = $postId;
         }
 
         return [
@@ -62,8 +110,25 @@ final class Virtual_Comments
      * @param  array<int, \WP_Comment>  $comments
      * @return array<int, \WP_Comment>
      */
-    public static function inject_virtual_comments(array $comments, int $postId): array
+    /**
+     * @param  array<int, \WP_Comment>  $comments
+     * @param  mixed  $postId
+     * @return array<int, \WP_Comment>
+     */
+    public static function inject_virtual_comments(array $comments, $postId): array
     {
+        $postId = (int) $postId;
+
+        $comments = array_values(array_filter(
+            $comments,
+            static fn ($comment): bool => $comment instanceof \WP_Comment,
+        ));
+
+        // WooCommerce product: chỉ meta + template single-product-reviews-virtual.php.
+        if (get_post_type($postId) === 'product') {
+            return $comments;
+        }
+
         $virtualComments = self::get_virtual_items($postId);
         if ($virtualComments === []) {
             return $comments;
@@ -104,19 +169,44 @@ final class Virtual_Comments
                 'user_id'              => 0,
             ];
 
-            $comments[] = new \WP_Comment((object) $commentData);
+            $commentObject = new \WP_Comment((object) $commentData);
+            self::$virtualCommentCache[$commentId] = $commentObject;
+            $comments[] = $commentObject;
             $index++;
         }
 
         return $comments;
     }
 
-  /**
+    /**
+     * @param  \WP_Comment|false|null  $comment
+     * @param  mixed  $comment_id
+     * @return \WP_Comment|false|null
+     */
+    public static function filter_get_comment($comment, $comment_id = 0)
+    {
+        if ($comment instanceof \WP_Comment) {
+            return $comment;
+        }
+
+        $resolved = self::build_virtual_comment_object((int) $comment_id);
+
+        return $resolved ?? $comment;
+    }
+
+    /**
      * @param  mixed  $value
+     * @param  mixed  $commentId
+     * @param  mixed  $metaKey
+     * @param  mixed  $single
      * @return mixed
      */
-    public static function inject_virtual_comment_rating($value, int $commentId, string $metaKey, bool $single)
+    public static function inject_virtual_comment_rating($value, $commentId, $metaKey, $single)
     {
+        $commentId = (int) $commentId;
+        $metaKey = (string) $metaKey;
+        $single = (bool) $single;
+
         if ($commentId >= 0 || $metaKey !== 'rating') {
             return $value;
         }
@@ -130,8 +220,14 @@ final class Virtual_Comments
         return $single ? $ratingVal : [$ratingVal];
     }
 
-    public static function adjust_comments_number(int $count, int $postId): int
+    /**
+     * @param  mixed  $count
+     * @param  mixed  $postId
+     */
+    public static function adjust_comments_number($count, $postId): int
     {
+        $count = (int) $count;
+        $postId = (int) $postId;
         $stats = self::get_virtual_reviews_stats($postId);
         if ($stats === false) {
             return $count;
@@ -143,8 +239,13 @@ final class Virtual_Comments
     /**
      * @param  int|\WC_Product  $product
      */
-    public static function adjust_woocommerce_review_count(int $count, $product): int
+    /**
+     * @param  mixed  $count
+     * @param  mixed  $product
+     */
+    public static function adjust_woocommerce_review_count($count, $product): int
     {
+        $count = (int) $count;
         $productId = $product instanceof \WC_Product ? $product->get_id() : (int) $product;
         $stats = self::get_virtual_reviews_stats($productId);
         if ($stats === false) {
@@ -158,8 +259,17 @@ final class Virtual_Comments
      * @param  array<int, int>  $counts
      * @return array<int, int>
      */
-    public static function adjust_woocommerce_rating_count(array $counts, $product): array
+    /**
+     * @param  mixed  $counts
+     * @param  mixed  $product
+     * @return array<int, int>
+     */
+    public static function adjust_woocommerce_rating_count($counts, $product): array
     {
+        if (! is_array($counts)) {
+            $counts = [];
+        }
+
         $productId = $product instanceof \WC_Product ? $product->get_id() : (int) $product;
         $stats = self::get_virtual_reviews_stats($productId);
         if ($stats === false) {
@@ -212,11 +322,9 @@ final class Virtual_Comments
      * @param  array<int, array<string, mixed>>  $items
      * @return array<int, array{author: string, content: string, rating?: int, date: string}>
      */
-    public static function normalize_items(array $items, bool $isProduct): array
+    public static function normalize_items(array $items, bool $isProduct, int $postId = 0): array
     {
-        $normalized = [];
-        $index = 0;
-
+        $validItems = [];
         foreach (array_values($items) as $item) {
             if (! is_array($item)) {
                 continue;
@@ -227,6 +335,18 @@ final class Virtual_Comments
                 continue;
             }
 
+            $validItems[] = $item;
+        }
+
+        $staggeredDates = self::build_staggered_comment_dates(
+            count($validItems),
+            self::resolve_post_published_timestamp($postId),
+        );
+
+        $normalized = [];
+        $index = 0;
+
+        foreach ($validItems as $item) {
             $author = trim((string) ($item['author'] ?? $item['author_name'] ?? 'Khách mua hàng'));
             if ($author === '') {
                 $author = 'Khách mua hàng';
@@ -234,8 +354,11 @@ final class Virtual_Comments
 
             $row = [
                 'author'  => sanitize_text_field($author),
-                'content' => $content,
-                'date'    => self::normalize_date($item, $index),
+                'content' => trim((string) ($item['content'] ?? $item['comment'] ?? '')),
+                'date'    => self::normalize_date(
+                    $item,
+                    $staggeredDates[$index] ?? $staggeredDates[0] ?? self::format_datetime((int) current_time('timestamp')),
+                ),
             ];
 
             if ($isProduct) {
@@ -341,8 +464,7 @@ final class Virtual_Comments
             $hour = random_int(8, 21);
             $minute = random_int(0, 59);
 
-            $dates[] = wp_date(
-                'Y-m-d H:i:s',
+            $dates[] = self::format_datetime(
                 $publishedTimestamp + ($days * DAY_IN_SECONDS) + ($hour * HOUR_IN_SECONDS) + ($minute * MINUTE_IN_SECONDS),
             );
         }
@@ -361,10 +483,126 @@ final class Virtual_Comments
         if ($raw !== '') {
             $timestamp = strtotime($raw);
             if ($timestamp !== false) {
-                return wp_date('Y-m-d H:i:s', $timestamp);
+                return self::format_datetime($timestamp);
             }
         }
 
         return $fallbackDate;
     }
+
+    private static function format_datetime(int $timestamp): string
+    {
+        if (function_exists('wp_date')) {
+            return wp_date('Y-m-d H:i:s', $timestamp);
+        }
+
+        return date_i18n('Y-m-d H:i:s', $timestamp);
+    }
+
+    public static function build_virtual_comment_object(int $commentId): ?\WP_Comment
+    {
+        if ($commentId >= 0) {
+            return null;
+        }
+
+        if (isset(self::$virtualCommentCache[$commentId])) {
+            return self::$virtualCommentCache[$commentId];
+        }
+
+        $decoded = self::decode_virtual_comment_id($commentId);
+        if ($decoded === null) {
+            return null;
+        }
+
+        $postId = (int) $decoded['post_id'];
+        $index = (int) $decoded['index'];
+        $items = self::get_virtual_items($postId);
+        $item = $items[$index - 1] ?? null;
+        if (! is_array($item)) {
+            return null;
+        }
+
+        $postType = get_post_type($postId) ?: 'post';
+        $commentDate = isset($item['date']) && is_string($item['date']) && $item['date'] !== ''
+            ? $item['date']
+            : current_time('mysql');
+        $rating = isset($item['rating']) ? max(1, min(5, (int) $item['rating'])) : 5;
+        self::$ratings[$commentId] = $rating;
+
+        $commentData = [
+            'comment_ID'           => $commentId,
+            'comment_post_ID'      => $postId,
+            'comment_author'       => sanitize_text_field((string) ($item['author'] ?? 'Khách mua hàng')),
+            'comment_author_email' => 'customer.' . abs($commentId) . '@example.com',
+            'comment_author_url'   => '',
+            'comment_author_IP'    => '127.0.0.1',
+            'comment_date'         => $commentDate,
+            'comment_date_gmt'     => get_gmt_from_date($commentDate),
+            'comment_content'      => wp_kses_post((string) ($item['content'] ?? '')),
+            'comment_karma'        => 0,
+            'comment_approved'     => '1',
+            'comment_agent'        => 'OMI SEO AI Engine',
+            'comment_type'         => $postType === 'product' ? 'review' : 'comment',
+            'comment_parent'       => 0,
+            'user_id'              => 0,
+        ];
+
+        $commentObject = new \WP_Comment((object) $commentData);
+        self::$virtualCommentCache[$commentId] = $commentObject;
+
+        return $commentObject;
+    }
+
+    /**
+     * @return array{post_id: int, index: int}|null
+     */
+    private static function decode_virtual_comment_id(int $commentId): ?array
+    {
+        if ($commentId >= 0) {
+            return null;
+        }
+
+        $abs = abs($commentId);
+        $postId = intdiv($abs, 1000);
+        $index = $abs % 1000;
+
+        if ($postId <= 0 || $index <= 0) {
+            return null;
+        }
+
+        return [
+            'post_id' => $postId,
+            'index'   => $index,
+        ];
+    }
+
+    public static function flush_pending_wc_transients(): void
+    {
+        if (! function_exists('wc_delete_product_transients')) {
+            self::$pendingWcTransientFlush = [];
+
+            return;
+        }
+
+        foreach (array_values(array_unique(self::$pendingWcTransientFlush)) as $postId) {
+            $postId = (int) $postId;
+            if ($postId <= 0) {
+                continue;
+            }
+
+            try {
+                wc_delete_product_transients($postId);
+            } catch (\Throwable $exception) {
+                if (class_exists(Rest_Debug::class)) {
+                    Rest_Debug::log('wc_transient_flush_failed', [
+                        'post_id' => $postId,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        self::$pendingWcTransientFlush = [];
+    }
+
 }

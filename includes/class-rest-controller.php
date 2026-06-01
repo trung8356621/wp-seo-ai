@@ -79,6 +79,12 @@ final class Rest_Controller
             'permission_callback' => [self::class, 'authorize_write'],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/attachments/update-meta', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_update_attachment_meta'],
+            'permission_callback' => [self::class, 'authorize_write'],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/attachments/(?P<id>\d+)/replace-binary', [
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => [self::class, 'handle_replace_attachment_binary'],
@@ -98,6 +104,38 @@ final class Rest_Controller
             'permission_callback' => [self::class, 'authorize_write'],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/attachments/delete', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_delete_attachment_by_body'],
+            'permission_callback' => [self::class, 'authorize_write'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/attachments/(?P<id>\d+)/delete', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_delete_attachment'],
+            'permission_callback' => [self::class, 'authorize_write'],
+            'args'                => [
+                'id' => [
+                    'type'              => 'integer',
+                    'required'          => true,
+                    'sanitize_callback' => static fn ($value): int => max(0, (int) $value),
+                ],
+            ],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/attachments/(?P<id>\d+)', [
+            'methods'             => WP_REST_Server::DELETABLE,
+            'callback'            => [self::class, 'handle_delete_attachment'],
+            'permission_callback' => [self::class, 'authorize_write'],
+            'args'                => [
+                'id' => [
+                    'type'              => 'integer',
+                    'required'          => true,
+                    'sanitize_callback' => static fn ($value): int => max(0, (int) $value),
+                ],
+            ],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/comment-reviews', [
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => [self::class, 'handle_publish_comment_reviews'],
@@ -113,7 +151,13 @@ final class Rest_Controller
 
         register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/virtual-comments', [
             'methods'             => WP_REST_Server::CREATABLE,
-            'callback'            => [self::class, 'handle_save_virtual_comments'],
+            'callback'            => static function (WP_REST_Request $request): WP_REST_Response {
+                return Rest_Debug::wrap(
+                    'POST /posts/{id}/virtual-comments',
+                    [Rest_Controller::class, 'handle_save_virtual_comments'],
+                    $request,
+                );
+            },
             'permission_callback' => [self::class, 'authorize_write'],
             'args'                => [
                 'id' => [
@@ -139,7 +183,13 @@ final class Rest_Controller
 
         register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/editor-sync', [
             'methods'             => WP_REST_Server::CREATABLE,
-            'callback'            => [self::class, 'handle_editor_sync'],
+            'callback'            => static function (WP_REST_Request $request): WP_REST_Response {
+                return Rest_Debug::wrap(
+                    'POST /posts/{id}/editor-sync',
+                    [Rest_Controller::class, 'handle_editor_sync'],
+                    $request,
+                );
+            },
             'permission_callback' => [self::class, 'authorize_write'],
             'args'                => [
                 'id' => [
@@ -374,6 +424,64 @@ final class Rest_Controller
         }
     }
 
+    public static function handle_delete_attachment_by_body(WP_REST_Request $request): WP_REST_Response
+    {
+        $body = $request->get_json_params();
+        if (! is_array($body)) {
+            $body = [];
+        }
+
+        $attachmentId = (int) ($body['attachment_id'] ?? $body['id'] ?? 0);
+        if ($attachmentId <= 0) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Attachment ID không hợp lệ.',
+            ], 400);
+        }
+
+        $request->set_param('id', $attachmentId);
+
+        return self::handle_delete_attachment($request);
+    }
+
+    public static function handle_delete_attachment(WP_REST_Request $request): WP_REST_Response
+    {
+        $attachmentId = (int) $request->get_param('id');
+        if ($attachmentId <= 0) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Attachment ID không hợp lệ.',
+            ], 400);
+        }
+
+        $post = get_post($attachmentId);
+        if (! $post instanceof \WP_Post || $post->post_type !== 'attachment') {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Attachment không tồn tại.',
+            ], 404);
+        }
+
+        $url = wp_get_attachment_url($attachmentId);
+        $slug = (string) $post->post_name;
+
+        $deleted = wp_delete_attachment($attachmentId, true);
+        if (! $deleted) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Không xóa được attachment trên WordPress.',
+            ], 422);
+        }
+
+        return new WP_REST_Response([
+            'success' => true,
+            'message' => 'Đã xóa attachment trên WordPress.',
+            'attachment_id' => $attachmentId,
+            'url' => is_string($url) ? $url : '',
+            'slug' => $slug,
+        ], 200);
+    }
+
     /**
      * @return array{0: string, 1: string, 2: bool}|null [tempPath, mime, unlinkAfterUse]
      */
@@ -450,6 +558,76 @@ final class Rest_Controller
             'renamed' => $result['renamed'],
             'errors' => $result['errors'],
         ], $errorCount > 0 && $renamedCount === 0 ? 422 : 200);
+    }
+
+    public static function handle_update_attachment_meta(WP_REST_Request $request): WP_REST_Response
+    {
+        $body = $request->get_json_params();
+        if (! is_array($body)) {
+            $body = [];
+        }
+
+        $items = $body['items'] ?? [];
+        if (! is_array($items)) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Field "items" must be an array.',
+            ], 400);
+        }
+
+        $updated = [];
+        $errors = [];
+
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $attachmentId = (int) ($item['attachment_id'] ?? 0);
+            if ($attachmentId <= 0) {
+                continue;
+            }
+
+            $post = get_post($attachmentId);
+            if (! $post instanceof \WP_Post || $post->post_type !== 'attachment') {
+                $errors[] = [
+                    'attachment_id' => $attachmentId,
+                    'message' => 'Attachment not found.',
+                ];
+                continue;
+            }
+
+            $title = trim((string) ($item['title'] ?? ''));
+            $altText = trim((string) ($item['alt_text'] ?? $item['alt'] ?? ''));
+
+            if ($title !== '') {
+                wp_update_post([
+                    'ID' => $attachmentId,
+                    'post_title' => $title,
+                ]);
+            }
+
+            if ($altText !== '') {
+                update_post_meta($attachmentId, '_wp_attachment_image_alt', $altText);
+            }
+
+            $updated[] = [
+                'attachment_id' => $attachmentId,
+                'title' => $title !== '' ? $title : get_the_title($attachmentId),
+                'alt_text' => $altText !== '' ? $altText : (string) get_post_meta($attachmentId, '_wp_attachment_image_alt', true),
+            ];
+        }
+
+        $updatedCount = count($updated);
+        $errorCount = count($errors);
+
+        return new WP_REST_Response([
+            'success' => $updatedCount > 0 || ($updatedCount === 0 && $errorCount === 0),
+            'updated_count' => $updatedCount,
+            'error_count' => $errorCount,
+            'updated' => $updated,
+            'errors' => $errors,
+        ], $errorCount > 0 && $updatedCount === 0 ? 422 : 200);
     }
 
     public static function handle_sync_seo_faq(WP_REST_Request $request): WP_REST_Response
@@ -568,27 +746,64 @@ final class Rest_Controller
         }
 
         if ($changed) {
-            update_post_meta($postId, '_omi_seo_ai_skip_push', '1');
-            $result = wp_update_post($update, true);
-            delete_post_meta($postId, '_omi_seo_ai_skip_push');
+            try {
+                update_post_meta($postId, '_omi_seo_ai_skip_push', '1');
+                $result = wp_update_post($update, true);
+                delete_post_meta($postId, '_omi_seo_ai_skip_push');
 
-            if (is_wp_error($result)) {
-                return new WP_REST_Response([
-                    'success' => false,
-                    'message' => $result->get_error_message(),
-                ], 422);
+                if (is_wp_error($result)) {
+                    return new WP_REST_Response([
+                        'success' => false,
+                        'message' => $result->get_error_message(),
+                    ], 422);
+                }
+            } catch (\Throwable $exception) {
+                delete_post_meta($postId, '_omi_seo_ai_skip_push');
+                Rest_Debug::log('editor_sync_post_update_failed', [
+                    'post_id' => $postId,
+                    'message' => $exception->getMessage(),
+                ]);
+
+                return Rest_Debug::error_response(
+                    'wp_update_post failed during editor-sync.',
+                    $exception,
+                    422,
+                );
             }
         }
 
-        $virtualCount = self::apply_virtual_comments_from_body($postId, $body, $post->post_type === 'product');
+        $virtualResult = self::apply_virtual_comments_from_body($postId, $body, $post->post_type === 'product');
+        $virtualCount = (int) ($virtualResult['count'] ?? 0);
+        $virtualError = (string) ($virtualResult['error'] ?? '');
 
-        return new WP_REST_Response([
+        $seoApplied = false;
+        $seoError = '';
+        if (isset($body['seo']) && is_array($body['seo'])) {
+            try {
+                $seoApplied = Seo_Plugin_Resolver::apply_to_post($postId, $body['seo']);
+            } catch (\Throwable $exception) {
+                $seoError = $exception->getMessage();
+            }
+        }
+
+        $response = [
             'success' => true,
             'message' => 'Đã đồng bộ bài viết từ SEO editor.',
             'wp_post_id' => $postId,
             'faq_count' => $faqCount,
             'virtual_count' => $virtualCount,
-        ], 200);
+            'seo_applied' => $seoApplied,
+        ];
+
+        if ($virtualError !== '') {
+            $response['virtual_comments_error'] = $virtualError;
+        }
+
+        if ($seoError !== '') {
+            $response['seo_error'] = $seoError;
+        }
+
+        return new WP_REST_Response($response, 200);
     }
 
     public static function handle_save_virtual_comments(WP_REST_Request $request): WP_REST_Response
@@ -607,7 +822,37 @@ final class Rest_Controller
             ], 404);
         }
 
-        $count = self::apply_virtual_comments_from_body($postId, $body, $post->post_type === 'product');
+        $itemsPreview = $body['virtual_comments'] ?? $body['items'] ?? [];
+        Rest_Debug::log('virtual_comments_payload', [
+            'post_id'      => $postId,
+            'post_type'    => $post->post_type,
+            'items_count'  => is_array($itemsPreview) ? count($itemsPreview) : 0,
+            'plugin'       => defined('OMI_SEO_AI_BRIDGE_VERSION') ? OMI_SEO_AI_BRIDGE_VERSION : '',
+        ]);
+
+        $virtualResult = self::apply_virtual_comments_from_body($postId, $body, $post->post_type === 'product');
+        if (($virtualResult['error'] ?? '') !== '') {
+            Rest_Debug::log('virtual_comments_save_failed', [
+                'post_id' => $postId,
+                'error'   => (string) $virtualResult['error'],
+            ]);
+
+            $payload = [
+                'success' => false,
+                'message' => (string) $virtualResult['error'],
+            ];
+            if (Rest_Debug::is_debug_enabled()) {
+                $payload['debug'] = [
+                    'post_id'     => $postId,
+                    'post_type'   => $post->post_type,
+                    'log_file'    => Rest_Debug::log_path(),
+                ];
+            }
+
+            return new WP_REST_Response($payload, 422);
+        }
+
+        $count = (int) ($virtualResult['count'] ?? 0);
 
         return new WP_REST_Response([
             'success' => true,
@@ -620,8 +865,9 @@ final class Rest_Controller
 
     /**
      * @param  array<string, mixed>  $body
+     * @return array{count: int, error: string}
      */
-    private static function apply_virtual_comments_from_body(int $postId, array $body, bool $isProduct): int
+    private static function apply_virtual_comments_from_body(int $postId, array $body, bool $isProduct): array
     {
         $items = null;
 
@@ -640,12 +886,39 @@ final class Rest_Controller
         }
 
         if ($items === null) {
-            return count(Virtual_Comments::get_virtual_items($postId));
+            return [
+                'count' => count(Virtual_Comments::get_virtual_items($postId)),
+                'error' => '',
+            ];
         }
 
-        $result = Virtual_Comments::save_for_post($postId, $items);
+        try {
+            $result = Virtual_Comments::save_for_post($postId, $items);
+        } catch (\Throwable $exception) {
+            Rest_Debug::log('virtual_comments_exception', [
+                'post_id' => $postId,
+                'message' => $exception->getMessage(),
+                'file'    => $exception->getFile(),
+                'line'    => $exception->getLine(),
+            ]);
 
-        return (int) ($result['count'] ?? 0);
+            return [
+                'count' => 0,
+                'error' => $exception->getMessage(),
+            ];
+        }
+
+        if (! ($result['success'] ?? false)) {
+            return [
+                'count' => 0,
+                'error' => (string) ($result['message'] ?? 'Unable to save virtual comments.'),
+            ];
+        }
+
+        return [
+            'count' => (int) ($result['count'] ?? 0),
+            'error' => '',
+        ];
     }
 
     public static function handle_publish_comment_reviews(WP_REST_Request $request): WP_REST_Response
@@ -789,12 +1062,18 @@ final class Rest_Controller
             }
         }
 
+        $seoApplied = false;
+        if (isset($body['seo']) && is_array($body['seo'])) {
+            $seoApplied = Seo_Plugin_Resolver::apply_to_term($termId, $body['seo']);
+        }
+
         return new WP_REST_Response([
             'success' => true,
             'message' => 'Đã đồng bộ danh mục từ SEO editor.',
             'wp_post_id' => $termId,
             'taxonomy' => $taxonomy,
             'faq_count' => $faqCount,
+            'seo_applied' => $seoApplied,
         ], 200);
     }
 
@@ -832,6 +1111,7 @@ final class Rest_Controller
                     : [],
                 'permalink' => (string) ($mapped['permalink'] ?? ''),
                 'faqs' => is_array($mapped['faqs'] ?? null) ? $mapped['faqs'] : [],
+                'seo' => is_array($mapped['seo'] ?? null) ? $mapped['seo'] : [],
             ],
         ], 200);
     }
@@ -946,6 +1226,7 @@ final class Rest_Controller
                 'type' => (string) ($mapped['type'] ?? ''),
                 'wp_post_type' => (string) ($mapped['wp_post_type'] ?? ''),
                 'faqs' => is_array($mapped['faqs'] ?? null) ? $mapped['faqs'] : [],
+                'seo' => is_array($mapped['seo'] ?? null) ? $mapped['seo'] : [],
             ],
         ], 200);
     }
