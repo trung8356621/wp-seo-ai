@@ -17,7 +17,10 @@ if (! $product instanceof \WC_Product) {
 
 $postId = (int) $product->get_id();
 $virtualItems = \OmiSeoAiBridge\Virtual_Comments::get_virtual_items($postId);
-$reviewCount = (int) $product->get_review_count();
+$reviewCount = \OmiSeoAiBridge\Virtual_Comments::count_displayable_virtual_items($postId);
+if ($reviewCount <= 0) {
+    $reviewCount = (int) $product->get_review_count();
+}
 
 ?>
 <div id="reviews" class="woocommerce-Reviews omi-seo-virtual-reviews">
@@ -46,8 +49,18 @@ $reviewCount = (int) $product->get_review_count();
                     }
 
                     $author = sanitize_text_field((string) ($item['author'] ?? 'Khách mua hàng'));
-                    $content = (string) ($item['content'] ?? '');
+                    $content = trim((string) ($item['content'] ?? $item['comment'] ?? ''));
+                    if ($content === '') {
+                        continue;
+                    }
+
                     $dateRaw = (string) ($item['date'] ?? '');
+                    $dateDisplay = $dateRaw !== ''
+                        ? \OmiSeoAiBridge\Virtual_Comments::format_review_date_for_display($dateRaw)
+                        : '';
+                    $dateAttr = $dateRaw !== ''
+                        ? \OmiSeoAiBridge\Virtual_Comments::format_review_date_for_datetime_attr($dateRaw)
+                        : '';
                     $rating = isset($item['rating']) ? max(1, min(5, (int) $item['rating'])) : 5;
                     $itemId = 'omi-vreview-' . $postId . '-' . (int) $index;
                     ?>
@@ -61,9 +74,9 @@ $reviewCount = (int) $product->get_review_count();
                                 <p class="meta">
                                     <em class="woocommerce-review__awaiting-approval"></em>
                                     <strong class="woocommerce-review__author"><?php echo esc_html($author); ?></strong>
-                                    <?php if ($dateRaw !== '') : ?>
+                                    <?php if ($dateDisplay !== '') : ?>
                                         <span class="woocommerce-review__published-date">
-                                            — <time datetime="<?php echo esc_attr($dateRaw); ?>"><?php echo esc_html($dateRaw); ?></time>
+                                            — <time datetime="<?php echo esc_attr($dateAttr); ?>"><?php echo esc_html($dateDisplay); ?></time>
                                         </span>
                                     <?php endif; ?>
                                 </p>

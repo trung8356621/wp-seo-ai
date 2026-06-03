@@ -1,4 +1,4 @@
-figure.aligncenter img {
+figure.aligncenter img,.wp-block-video.aligncenter video {
     display: block;
     margin: 0 auto;
 }

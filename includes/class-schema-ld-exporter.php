@@ -116,12 +116,20 @@ final class Schema_Ld_Exporter
             $node['offers'] = $offers;
         }
 
+        $virtualItems = Virtual_Comments::get_virtual_items($postId);
+        $schemaReviews = self::build_review_schema_nodes($virtualItems);
+        if ($schemaReviews !== []) {
+            $node['review'] = $schemaReviews;
+        }
+
         $stats = Virtual_Comments::get_virtual_reviews_stats($postId);
         if (is_array($stats) && ($stats['count'] ?? 0) > 0) {
             $node['aggregateRating'] = [
                 '@type'       => 'AggregateRating',
                 'ratingValue' => (string) ($stats['average'] ?? 5),
                 'reviewCount' => (string) ($stats['count'] ?? 0),
+                'bestRating'  => '5',
+                'worstRating' => '1',
             ];
         } elseif ($product->get_review_count() > 0 && wc_review_ratings_enabled()) {
             $node['aggregateRating'] = [
@@ -176,6 +184,61 @@ final class Schema_Ld_Exporter
                 ? 'https://schema.org/InStock'
                 : 'https://schema.org/OutOfStock',
         ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     * @return list<array<string, mixed>>
+     */
+    private static function build_review_schema_nodes(array $items): array
+    {
+        $reviews = [];
+        $index = 0;
+
+        foreach (array_values($items) as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $content = trim((string) ($item['content'] ?? $item['comment'] ?? ''));
+            if ($content === '') {
+                continue;
+            }
+
+            $rating = isset($item['rating']) && is_numeric($item['rating'])
+                ? max(1, min(5, (int) $item['rating']))
+                : 5;
+
+            $author = trim((string) ($item['author'] ?? 'Khách mua hàng'));
+            if ($author === '') {
+                $author = 'Khách mua hàng';
+            }
+
+            $review = [
+                '@type' => 'Review',
+                'author' => [
+                    '@type' => 'Person',
+                    'name'  => $author,
+                ],
+                'reviewRating' => [
+                    '@type'       => 'Rating',
+                    'ratingValue' => (string) $rating,
+                    'bestRating'  => '5',
+                    'worstRating' => '1',
+                ],
+                'reviewBody' => $content,
+            ];
+
+            $date = trim((string) ($item['date'] ?? ''));
+            if ($date !== '') {
+                $review['datePublished'] = $date;
+            }
+
+            $reviews[] = $review;
+            $index++;
+        }
+
+        return $reviews;
     }
 
     /**

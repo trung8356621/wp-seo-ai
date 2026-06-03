@@ -149,6 +149,19 @@ final class Rest_Controller
             ],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/comment-reviews', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_get_comment_reviews'],
+            'permission_callback' => [self::class, 'authorize'],
+            'args'                => [
+                'id' => [
+                    'type'              => 'integer',
+                    'required'          => true,
+                    'sanitize_callback' => static fn ($value): int => max(0, (int) $value),
+                ],
+            ],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/virtual-comments', [
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => static function (WP_REST_Request $request): WP_REST_Response {
@@ -970,6 +983,66 @@ final class Rest_Controller
                 'message' => (string) ($result['message'] ?? 'No valid virtual comments.'),
             ]],
         ], $count > 0 ? 200 : 422);
+    }
+
+    public static function handle_get_comment_reviews(WP_REST_Request $request): WP_REST_Response
+    {
+        $postId = (int) $request->get_param('id');
+        $post = get_post($postId);
+        if (! $post instanceof \WP_Post) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Post not found.',
+                'count' => 0,
+                'items' => [],
+            ], 404);
+        }
+
+        $postType = (string) $post->post_type;
+        $commentType = $postType === 'product' ? 'review' : 'comment';
+        $comments = get_comments([
+            'post_id' => $postId,
+            'status' => 'approve',
+            'type' => $commentType,
+            'orderby' => 'comment_date_gmt',
+            'order' => 'ASC',
+            'number' => 0,
+        ]);
+
+        $items = [];
+        foreach ($comments as $comment) {
+            if (! $comment instanceof \WP_Comment) {
+                continue;
+            }
+
+            $content = trim((string) $comment->comment_content);
+            if ($content === '') {
+                continue;
+            }
+
+            $row = [
+                'author' => sanitize_text_field((string) ($comment->comment_author ?: 'Khách mua hàng')),
+                'content' => $content,
+                'date' => (string) ($comment->comment_date ?: current_time('mysql')),
+            ];
+
+            if ($postType === 'product') {
+                $rating = (int) get_comment_meta((int) $comment->comment_ID, 'rating', true);
+                if ($rating > 0) {
+                    $row['rating'] = max(1, min(5, $rating));
+                }
+            }
+
+            $items[] = $row;
+        }
+
+        return new WP_REST_Response([
+            'success' => true,
+            'wp_post_id' => $postId,
+            'wp_post_type' => $postType,
+            'count' => count($items),
+            'items' => array_values($items),
+        ], 200);
     }
 
     public static function handle_term_editor_sync(WP_REST_Request $request): WP_REST_Response
