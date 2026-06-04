@@ -23,7 +23,13 @@ final class Seo_Plugin_Resolver
      *   meta_keys: array{post: array<string, array<int, string>>, term: array<string, array<int, string>>},
      *   wordpress_version: string,
      *   site_url: string,
-     *   bridge_version: string
+     *   bridge_version: string,
+     *   permalink: array{
+     *     structure: string,
+     *     category_base: string,
+     *     tag_base: string,
+     *     woocommerce?: array{product_base: string, category_base: string, tag_base: string}
+     *   }
      * }
      */
     public static function site_info(): array
@@ -63,7 +69,44 @@ final class Seo_Plugin_Resolver
             'wordpress_version' => (string) get_bloginfo('version'),
             'site_url'          => (string) home_url('/'),
             'bridge_version'    => defined('OMI_SEO_AI_BRIDGE_VERSION') ? (string) OMI_SEO_AI_BRIDGE_VERSION : '',
+            'permalink'         => self::permalink_settings(),
         ];
+    }
+
+    /**
+     * Cấu trúc permalink WordPress (Settings → Permalinks) để Laravel ghép URL khi sync trả ?p=ID.
+     *
+     * @return array{
+     *   structure: string,
+     *   category_base: string,
+     *   tag_base: string,
+     *   woocommerce?: array{product_base: string, category_base: string, tag_base: string}
+     * }
+     */
+    public static function permalink_settings(): array
+    {
+        $settings = [
+            'structure'     => (string) get_option('permalink_structure'),
+            'category_base' => (string) get_option('category_base'),
+            'tag_base'      => (string) get_option('tag_base'),
+        ];
+
+        if (! function_exists('woocommerce')) {
+            return $settings;
+        }
+
+        $wc = get_option('woocommerce_permalinks');
+        if (! is_array($wc)) {
+            return $settings;
+        }
+
+        $settings['woocommerce'] = [
+            'product_base'  => (string) ($wc['product_base'] ?? ''),
+            'category_base' => (string) ($wc['category_base'] ?? ''),
+            'tag_base'      => (string) ($wc['tag_base'] ?? ''),
+        ];
+
+        return $settings;
     }
 
     public static function is_rank_math_active(): bool

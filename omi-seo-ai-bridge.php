@@ -32,6 +32,7 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-debug.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-controller.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-laravel-push-sync.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-faq-shortcode.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-admin-frontend-edit-link.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-plugin-updater.php';
 
 add_action('plugins_loaded', static function (): void {
@@ -47,6 +48,7 @@ add_action('init', static function (): void {
     \OmiSeoAiBridge\Laravel_Push_Sync::register();
     \OmiSeoAiBridge\Faq_Shortcode::register();
     \OmiSeoAiBridge\Virtual_Comments::register();
+    \OmiSeoAiBridge\Admin_Frontend_Edit_Link::register();
 });
 
 add_action('admin_menu', static function (): void {

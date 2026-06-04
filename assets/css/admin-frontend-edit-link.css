@@ -1,0 +1,33 @@
+.omi-admin-edit-below-title {
+    margin: 0.5rem 0 1rem;
+    padding: 0;
+}
+
+.omi-admin-edit-below-title__link {
+    display: inline-block;
+    padding: 0.35rem 0.85rem;
+    border-radius: 4px;
+    background: #2271b1;
+    color: #fff !important;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.4;
+    text-decoration: none !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.omi-admin-edit-below-title__link:hover,
+.omi-admin-edit-below-title__link:focus {
+    background: #135e96;
+    color: #fff !important;
+}
+
+.omi-admin-edit-below-title--fixed {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 99999;
+    margin: 0;
+    padding: 0;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
