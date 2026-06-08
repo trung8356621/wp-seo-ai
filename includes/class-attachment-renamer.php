@@ -137,7 +137,17 @@ final class Attachment_Renamer
             ];
         }
 
+        $metadata = wp_get_attachment_metadata($attachmentId);
+        if (! is_array($metadata)) {
+            $metadata = [];
+        }
+
+        $oldVariantUrls = $this->collect_variant_urls($metadata, $oldRelativeMain);
+        $deletedVariantCount = $this->delete_dimension_variants($metadata, $baseDir, $oldBasename);
+
         if (! @rename($file, $newFile)) {
+            $this->regenerate_attachment_metadata($attachmentId, $file);
+
             return [
                 'success'       => false,
                 'attachment_id' => $attachmentId,
@@ -152,42 +162,29 @@ final class Attachment_Renamer
             $newRelativeMain = '';
         }
 
-        $oldToNewUrlMap = [];
-        $metadata = wp_get_attachment_metadata($attachmentId);
-        if (! is_array($metadata)) {
-            $metadata = [];
-        }
-
-        $variantRenamedCount = 0;
-        if ($oldBasename !== '' && $baseDir !== '') {
-            [
-                $metadata,
-                $variantUrlMap,
-                $variantRenamedCount,
-            ] = $this->rename_attachment_variants(
-                $metadata,
-                $baseDir,
-                $oldBasename,
-                $newSlug,
-                $oldRelativeMain,
-                $newRelativeMain
-            );
-
-            if ($variantUrlMap !== []) {
-                $oldToNewUrlMap = array_merge($oldToNewUrlMap, $variantUrlMap);
+        $regeneratedMetadata = $this->regenerate_attachment_metadata($attachmentId, $newFile);
+        if ($regeneratedMetadata === null) {
+            if (@rename($newFile, $file)) {
+                update_attached_file($attachmentId, $oldRelativeMain);
+                $this->regenerate_attachment_metadata($attachmentId, $file);
             }
-        }
 
-        if ($newRelativeMain !== '') {
-            $metadata['file'] = $newRelativeMain;
-        }
-        if (is_array($metadata)) {
-            wp_update_attachment_metadata($attachmentId, $metadata);
+            return [
+                'success'       => false,
+                'attachment_id' => $attachmentId,
+                'message'       => 'Renamed the original file but could not regenerate WordPress image sizes.',
+            ];
         }
 
         $newUrl = (string) wp_get_attachment_url($attachmentId);
         $oldMainUrlFromPath = $this->uploads_url_from_relative($oldRelativeMain);
         $newMainUrlFromPath = $this->uploads_url_from_relative($newRelativeMain);
+        $oldToNewUrlMap = $this->map_regenerated_variant_urls(
+            $oldVariantUrls,
+            $regeneratedMetadata,
+            $newRelativeMain,
+            $newUrl
+        );
 
         wp_update_post([
             'ID'         => $attachmentId,
@@ -216,7 +213,8 @@ final class Attachment_Renamer
             'new_url'       => $newUrl,
             'new_slug'      => $newSlug,
             'requested_slug' => $requestedSlug,
-            'variant_renamed_count' => $variantRenamedCount,
+            'variant_deleted_count' => $deletedVariantCount,
+            'variant_regenerated_count' => count((array) ($regeneratedMetadata['sizes'] ?? [])),
             'posts_updated' => $postsUpdated,
         ];
     }
@@ -384,6 +382,111 @@ final class Attachment_Renamer
         }
 
         return $nextName . '.' . $extension;
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     * @return array<string, string>
+     */
+    private function collect_variant_urls(array $metadata, string $relativeMain): array
+    {
+        $urls = [];
+        $relativeDir = $this->extract_relative_dir($relativeMain);
+
+        foreach ((array) ($metadata['sizes'] ?? []) as $sizeKey => $sizeMeta) {
+            if (! is_array($sizeMeta)) {
+                continue;
+            }
+
+            $file = trim((string) ($sizeMeta['file'] ?? ''));
+            $url = $this->uploads_url_from_relative($this->join_relative_path($relativeDir, $file));
+            if ($file !== '' && $url !== '') {
+                $urls[(string) $sizeKey] = $url;
+            }
+        }
+
+        return $urls;
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function delete_dimension_variants(array $metadata, string $baseDir, string $baseName): int
+    {
+        $files = [];
+
+        foreach ((array) ($metadata['sizes'] ?? []) as $sizeMeta) {
+            if (is_array($sizeMeta)) {
+                $file = trim((string) ($sizeMeta['file'] ?? ''));
+                if ($file !== '') {
+                    $files[] = trailingslashit($baseDir).basename($file);
+                }
+            }
+        }
+
+        $pattern = trailingslashit($baseDir).$baseName.'-[0-9]*x[0-9]*.*';
+        foreach ((array) glob($pattern, GLOB_NOSORT) as $matchedFile) {
+            $files[] = (string) $matchedFile;
+        }
+
+        $deleted = 0;
+        foreach (array_unique($files) as $variantFile) {
+            if (is_file($variantFile) && @unlink($variantFile)) {
+                $deleted++;
+            }
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function regenerate_attachment_metadata(int $attachmentId, string $file): ?array
+    {
+        if (! function_exists('wp_generate_attachment_metadata')) {
+            require_once ABSPATH.'wp-admin/includes/image.php';
+        }
+
+        $metadata = wp_generate_attachment_metadata($attachmentId, $file);
+        if (! is_array($metadata)) {
+            return null;
+        }
+
+        wp_update_attachment_metadata($attachmentId, $metadata);
+
+        return $metadata;
+    }
+
+    /**
+     * @param  array<string, string>  $oldUrls
+     * @param  array<string, mixed>  $metadata
+     * @return array<string, string>
+     */
+    private function map_regenerated_variant_urls(
+        array $oldUrls,
+        array $metadata,
+        string $relativeMain,
+        string $mainUrl
+    ): array {
+        $urlMap = [];
+        $relativeDir = $this->extract_relative_dir($relativeMain);
+        $sizes = (array) ($metadata['sizes'] ?? []);
+
+        foreach ($oldUrls as $sizeKey => $oldUrl) {
+            $newFile = is_array($sizes[$sizeKey] ?? null)
+                ? trim((string) ($sizes[$sizeKey]['file'] ?? ''))
+                : '';
+            $newUrl = $newFile !== ''
+                ? $this->uploads_url_from_relative($this->join_relative_path($relativeDir, $newFile))
+                : $mainUrl;
+
+            if ($oldUrl !== '' && $newUrl !== '' && $oldUrl !== $newUrl) {
+                $urlMap[$oldUrl] = $newUrl;
+            }
+        }
+
+        return $urlMap;
     }
 
     private function uploads_url_from_relative(string $relativePath): string

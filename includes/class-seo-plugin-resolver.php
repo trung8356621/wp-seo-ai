@@ -89,9 +89,16 @@ final class Seo_Plugin_Resolver
             'structure'     => (string) get_option('permalink_structure'),
             'category_base' => (string) get_option('category_base'),
             'tag_base'      => (string) get_option('tag_base'),
+            'templates_version' => 1,
+            'templates'     => [
+                'post' => self::sample_post_permalink_template('post'),
+                'category' => self::sample_term_permalink_template('category'),
+                'product' => self::sample_post_permalink_template('product'),
+                'product_category' => self::sample_term_permalink_template('product_cat'),
+            ],
         ];
 
-        if (! function_exists('woocommerce')) {
+        if (! class_exists('WooCommerce') && ! function_exists('WC') && ! post_type_exists('product')) {
             return $settings;
         }
 
@@ -107,6 +114,74 @@ final class Seo_Plugin_Resolver
         ];
 
         return $settings;
+    }
+
+    private static function sample_post_permalink_template(string $postType): string
+    {
+        if (! post_type_exists($postType)) {
+            return '';
+        }
+
+        global $wpdb;
+        $postId = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status NOT IN ('trash', 'auto-draft', 'inherit') ORDER BY ID DESC LIMIT 1",
+            $postType,
+        ));
+        if ($postId <= 0) {
+            return '';
+        }
+
+        $slug = trim((string) get_post_field('post_name', $postId));
+        $url = Permalink_Resolver::for_post($postId);
+
+        return self::replace_url_slug_with_token($url, $slug);
+    }
+
+    private static function sample_term_permalink_template(string $taxonomy): string
+    {
+        if (! taxonomy_exists($taxonomy)) {
+            return '';
+        }
+
+        $terms = get_terms([
+            'taxonomy' => $taxonomy,
+            'hide_empty' => false,
+            'number' => 1,
+            'orderby' => 'term_id',
+            'order' => 'DESC',
+        ]);
+        $term = is_array($terms) ? ($terms[0] ?? null) : null;
+        if (! $term instanceof \WP_Term) {
+            return '';
+        }
+
+        $url = Permalink_Resolver::for_term($term);
+
+        return self::replace_url_slug_with_token($url, (string) $term->slug);
+    }
+
+    private static function replace_url_slug_with_token(string $url, string $slug): string
+    {
+        $url = trim($url);
+        $slug = trim($slug);
+        if ($url === '' || $slug === '') {
+            return '';
+        }
+
+        $encodedSlug = rawurlencode($slug);
+        $position = strrpos($url, '/' . $encodedSlug);
+        $matchedSlug = $encodedSlug;
+        if ($position === false) {
+            $position = strrpos($url, '/' . $slug);
+            $matchedSlug = $slug;
+        }
+        if ($position === false) {
+            return '';
+        }
+
+        $prefixLength = $position + 1;
+
+        return substr($url, 0, $prefixLength) . '%slug%' . substr($url, $prefixLength + strlen($matchedSlug));
     }
 
     public static function is_rank_math_active(): bool

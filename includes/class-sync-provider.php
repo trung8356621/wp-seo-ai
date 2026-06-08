@@ -300,20 +300,12 @@ final class Sync_Provider
 
     private function resolve_post_permalink(\WP_Post $post): string
     {
-        $url = get_permalink($post);
-
-        return is_string($url) ? $url : '';
+        return Permalink_Resolver::for_post($post);
     }
 
     private function resolve_term_permalink(\WP_Term $term): string
     {
-        $link = get_term_link($term);
-
-        if (is_wp_error($link)) {
-            return '';
-        }
-
-        return (string) $link;
+        return Permalink_Resolver::for_term($term);
     }
 
     /**

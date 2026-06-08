@@ -73,6 +73,12 @@ final class Rest_Controller
             ],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/posts', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_create_post'],
+            'permission_callback' => [self::class, 'authorize_write'],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/attachments/rename', [
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => [self::class, 'handle_rename_attachments'],
@@ -803,6 +809,8 @@ final class Rest_Controller
             'success' => true,
             'message' => 'Đã đồng bộ bài viết từ SEO editor.',
             'wp_post_id' => $postId,
+            'slug' => (string) get_post_field('post_name', $postId),
+            'permalink' => Permalink_Resolver::for_post($postId),
             'faq_count' => $faqCount,
             'virtual_count' => $virtualCount,
             'seo_applied' => $seoApplied,
@@ -817,6 +825,69 @@ final class Rest_Controller
         }
 
         return new WP_REST_Response($response, 200);
+    }
+
+    public static function handle_create_post(WP_REST_Request $request): WP_REST_Response
+    {
+        $body = $request->get_json_params();
+        if (! is_array($body)) {
+            $body = [];
+        }
+
+        $title = trim((string) ($body['title'] ?? ''));
+        if ($title === '') {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Post title is required.',
+            ], 422);
+        }
+
+        $postType = sanitize_key((string) ($body['post_type'] ?? 'post'));
+        if (! in_array($postType, ['post', 'product'], true) || ! post_type_exists($postType)) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Unsupported WordPress post type.',
+            ], 422);
+        }
+
+        $status = sanitize_key((string) ($body['status'] ?? 'draft'));
+        if (! in_array($status, ['publish', 'draft', 'pending', 'future', 'private'], true)) {
+            $status = 'draft';
+        }
+
+        $postData = [
+            'post_title' => $title,
+            'post_status' => $status,
+            'post_type' => $postType,
+        ];
+        $requestedSlug = sanitize_title((string) ($body['slug'] ?? ''));
+        if ($requestedSlug !== '') {
+            $postData['post_name'] = $requestedSlug;
+        }
+
+        Laravel_Push_Sync::suppress(true);
+        try {
+            $postId = wp_insert_post($postData, true);
+        } finally {
+            Laravel_Push_Sync::suppress(false);
+        }
+
+        if (is_wp_error($postId)) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => $postId->get_error_message(),
+            ], 422);
+        }
+
+        $postId = (int) $postId;
+
+        return new WP_REST_Response([
+            'success' => true,
+            'message' => 'Đã tạo bài viết mới trên WordPress.',
+            'wp_post_id' => $postId,
+            'slug' => (string) get_post_field('post_name', $postId),
+            'permalink' => Permalink_Resolver::for_post($postId),
+        ], 201);
     }
 
     public static function handle_save_virtual_comments(WP_REST_Request $request): WP_REST_Response
@@ -1145,6 +1216,8 @@ final class Rest_Controller
             'message' => 'Đã đồng bộ danh mục từ SEO editor.',
             'wp_post_id' => $termId,
             'taxonomy' => $taxonomy,
+            'slug' => (string) $term->slug,
+            'permalink' => Permalink_Resolver::for_term($term),
             'faq_count' => $faqCount,
             'seo_applied' => $seoApplied,
         ], 200);
@@ -1294,7 +1367,7 @@ final class Rest_Controller
                 'post_images' => is_array($mapped['post_images'] ?? null)
                     ? $mapped['post_images']
                     : [],
-                'permalink' => (string) ($mapped['permalink'] ?? get_permalink($postId)),
+                'permalink' => (string) ($mapped['permalink'] ?? Permalink_Resolver::for_post($postId)),
                 'wp_entity' => 'post',
                 'type' => (string) ($mapped['type'] ?? ''),
                 'wp_post_type' => (string) ($mapped['wp_post_type'] ?? ''),

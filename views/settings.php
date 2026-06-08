@@ -26,6 +26,11 @@ $localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warnin
 
 <div class="wrap omi-seo-ai-bridge-wrap">
     <div class="omi-seo-ai-bridge-card">
+        <div class="omi-seo-ai-bridge-actions">
+            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=repair-images')); ?>">
+                Sửa ảnh phụ sai tên
+            </a>
+        </div>
         <h2 style="margin:0 0 14px;"><?php esc_html_e('Cài đặt kết nối Laravel', 'omi-seo-ai-bridge'); ?></h2>
 
         <?php if ($localhost_warning !== '') : ?>

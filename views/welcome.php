@@ -16,6 +16,11 @@ $settings_url = admin_url('admin.php?page=omi-seo-ai&view=settings');
 ?>
 <div class="wrap omi-seo-ai-bridge-wrap">
     <div class="omi-seo-ai-bridge-card">
+        <div class="omi-seo-ai-bridge-actions">
+            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=repair-images')); ?>">
+                Sửa ảnh phụ sai tên
+            </a>
+        </div>
         <div class="omi-seo-ai-bridge-card__corner">
             <a href="<?php echo esc_url($settings_url); ?>" title="<?php esc_attr_e('Cài đặt', 'omi-seo-ai-bridge'); ?>" aria-label="<?php esc_attr_e('Cài đặt', 'omi-seo-ai-bridge'); ?>">
                 <span class="dashicons dashicons-admin-generic" aria-hidden="true"></span>

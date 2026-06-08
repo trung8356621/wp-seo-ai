@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.19
+ * Version:           1.0.26
  * Author:            TVH
  */
 
@@ -12,7 +12,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.19');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.26');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL', 'omi_seo_laravel_api_url');
@@ -21,8 +21,10 @@ define('OMI_SEO_AI_BRIDGE_URL', plugin_dir_url(__FILE__));
 define('OMI_SEO_AI_BRIDGE_BASENAME', plugin_basename(__FILE__));
 
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-seo-plugin-resolver.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-permalink-resolver.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-post-images-extractor.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-renamer.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-variant-repair.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-binary-replacer.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-sync-provider.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-comment-review-publisher.php';
@@ -77,6 +79,43 @@ add_action('admin_enqueue_scripts', static function (string $hook): void {
         [],
         OMI_SEO_AI_BRIDGE_VERSION
     );
+
+    if (isset($_GET['view']) && sanitize_key((string) wp_unslash($_GET['view'])) === 'repair-images') {
+        wp_enqueue_script(
+            'omi-seo-ai-image-variant-repair',
+            OMI_SEO_AI_BRIDGE_URL . 'assets/image-variant-repair.js',
+            [],
+            OMI_SEO_AI_BRIDGE_VERSION,
+            true
+        );
+    }
+});
+
+add_action('wp_ajax_omi_scan_image_variants', static function (): void {
+    if (! current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Không có quyền truy cập.'], 403);
+    }
+    check_ajax_referer('omi_repair_image_variants', 'nonce');
+
+    $page = max(1, (int) ($_POST['page'] ?? 1));
+    wp_send_json_success((new \OmiSeoAiBridge\Attachment_Variant_Repair())->scan_page($page));
+});
+
+add_action('wp_ajax_omi_repair_image_variants', static function (): void {
+    if (! current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Không có quyền truy cập.'], 403);
+    }
+    check_ajax_referer('omi_repair_image_variants', 'nonce');
+
+    $rawIds = isset($_POST['ids']) ? (string) wp_unslash($_POST['ids']) : '';
+    $ids = array_slice(array_values(array_filter(array_map('intval', explode(',', $rawIds)))), 0, 10);
+    $service = new \OmiSeoAiBridge\Attachment_Variant_Repair();
+    $results = [];
+    foreach ($ids as $attachmentId) {
+        $results[] = $service->repair($attachmentId);
+    }
+
+    wp_send_json_success(['results' => $results]);
 });
 
 add_action('wp_enqueue_scripts', static function (): void {
@@ -230,6 +269,10 @@ function omi_seo_ai_bridge_render_admin_page(): void
     $view = isset($_GET['view']) ? sanitize_key((string) wp_unslash($_GET['view'])) : 'welcome';
     if ($view === 'settings') {
         include OMI_SEO_AI_BRIDGE_PATH . 'views/settings.php';
+        return;
+    }
+    if ($view === 'repair-images') {
+        include OMI_SEO_AI_BRIDGE_PATH . 'views/repair-image-variants.php';
         return;
     }
 

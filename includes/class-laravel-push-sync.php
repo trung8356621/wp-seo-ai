@@ -15,6 +15,8 @@ final class Laravel_Push_Sync
 {
     private const SKIP_META = '_omi_seo_ai_skip_push';
 
+    private static bool $suppressed = false;
+
     /** @var array<int, true> */
     private static $queuedPostIds = [];
 
@@ -36,9 +38,18 @@ final class Laravel_Push_Sync
         }
     }
 
+    public static function suppress(bool $suppressed): void
+    {
+        self::$suppressed = $suppressed;
+    }
+
     public static function on_save_post(int $postId, $post, bool $update): void
     {
         unset($update);
+
+        if (self::$suppressed) {
+            return;
+        }
 
         if (! $post instanceof \WP_Post) {
             $post = get_post($postId);
@@ -88,6 +99,10 @@ final class Laravel_Push_Sync
      */
     public static function on_wc_product_saved($product): void
     {
+        if (self::$suppressed) {
+            return;
+        }
+
         if (! is_object($product) || ! method_exists($product, 'get_id')) {
             return;
         }
@@ -98,6 +113,10 @@ final class Laravel_Push_Sync
   /** @param int|\WC_Product $product */
     public static function on_wc_product_id($product): void
     {
+        if (self::$suppressed) {
+            return;
+        }
+
         $postId = is_object($product) && method_exists($product, 'get_id')
             ? (int) $product->get_id()
             : (int) $product;
