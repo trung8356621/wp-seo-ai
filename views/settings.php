@@ -27,6 +27,9 @@ $localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warnin
 <div class="wrap omi-seo-ai-bridge-wrap">
     <div class="omi-seo-ai-bridge-card">
         <div class="omi-seo-ai-bridge-actions">
+            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=redirections')); ?>">
+                Chuyển hướng
+            </a>
             <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=repair-images')); ?>">
                 Sửa ảnh phụ sai tên
             </a>
@@ -170,6 +173,40 @@ $localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warnin
                         </span>
                     <?php endif; ?>
                 </div>
+            </div>
+
+            <div class="omi-seo-ai-bridge-row">
+                <label><?php esc_html_e('Chuyển hướng tự động', 'omi-seo-ai-bridge'); ?></label>
+                <label style="display:block;text-transform:none;letter-spacing:0;font-size:13px;font-weight:400;">
+                    <input
+                        type="checkbox"
+                        name="omi_seo_redirections_enabled"
+                        value="1"
+                        <?php checked(\OmiSeoAiBridge\Redirection_Manager::enabled()); ?>
+                    />
+                    <?php esc_html_e('Tự tạo redirect 301 từ URL cũ sang URL mới khi chuyển post type.', 'omi-seo-ai-bridge'); ?>
+                </label>
+                <p class="description" style="margin-top:8px;">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=redirections')); ?>">
+                        <?php esc_html_e('Quản lý danh sách chuyển hướng', 'omi-seo-ai-bridge'); ?>
+                    </a>
+                </p>
+            </div>
+
+            <div class="omi-seo-ai-bridge-row">
+                <label><?php esc_html_e('Sửa bài viết trên Laravel', 'omi-seo-ai-bridge'); ?></label>
+                <label style="display:block;text-transform:none;letter-spacing:0;font-size:13px;font-weight:400;">
+                    <input
+                        type="checkbox"
+                        name="omi_seo_admin_bar_edit_enabled"
+                        value="1"
+                        <?php checked(\OmiSeoAiBridge\Admin_Frontend_Edit_Link::adminBarEnabled()); ?>
+                    />
+                    <?php esc_html_e('Hiển thị nút “Sửa trên Laravel” trong Admin Bar ở trang bài viết, sản phẩm và danh mục.', 'omi-seo-ai-bridge'); ?>
+                </label>
+                <p class="description" style="margin-top:8px;">
+                    <?php esc_html_e('Nút này không phụ thuộc giao diện theme và chỉ hiện với người có quyền sửa nội dung hiện tại.', 'omi-seo-ai-bridge'); ?>
+                </p>
             </div>
 
             <div class="omi-seo-ai-bridge-submit-wrap">

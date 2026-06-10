@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.26
+ * Version:           1.0.29
  * Author:            TVH
  */
 
@@ -12,7 +12,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.26');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.29');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL', 'omi_seo_laravel_api_url');
@@ -35,6 +35,7 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-controller.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-laravel-push-sync.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-faq-shortcode.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-admin-frontend-edit-link.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-redirection-manager.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-plugin-updater.php';
 
 add_action('plugins_loaded', static function (): void {
@@ -51,6 +52,7 @@ add_action('init', static function (): void {
     \OmiSeoAiBridge\Faq_Shortcode::register();
     \OmiSeoAiBridge\Virtual_Comments::register();
     \OmiSeoAiBridge\Admin_Frontend_Edit_Link::register();
+    \OmiSeoAiBridge\Redirection_Manager::register();
 });
 
 add_action('admin_menu', static function (): void {
@@ -176,6 +178,16 @@ add_action('admin_init', static function (): void {
         update_option(OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL, $laravelUrl, false);
         update_option('omi_seo_ai_rest_log', isset($_POST['omi_seo_rest_log']) ? '1' : '0', false);
         update_option('omi_seo_ai_rest_debug', isset($_POST['omi_seo_rest_debug']) ? '1' : '0', false);
+        update_option(
+            \OmiSeoAiBridge\Admin_Frontend_Edit_Link::OPTION_ADMIN_BAR_ENABLED,
+            isset($_POST['omi_seo_admin_bar_edit_enabled']) ? '1' : '0',
+            false
+        );
+        update_option(
+            \OmiSeoAiBridge\Redirection_Manager::OPTION_ENABLED,
+            isset($_POST['omi_seo_redirections_enabled']) ? '1' : '0',
+            false
+        );
 
         wp_safe_redirect(add_query_arg([
             'page' => 'omi-seo-ai',
@@ -273,6 +285,10 @@ function omi_seo_ai_bridge_render_admin_page(): void
     }
     if ($view === 'repair-images') {
         include OMI_SEO_AI_BRIDGE_PATH . 'views/repair-image-variants.php';
+        return;
+    }
+    if ($view === 'redirections') {
+        include OMI_SEO_AI_BRIDGE_PATH . 'views/redirections.php';
         return;
     }
 

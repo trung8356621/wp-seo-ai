@@ -241,3 +241,57 @@
 .omi-seo-ai-repair-table code {
     overflow-wrap: anywhere;
 }
+
+.omi-seo-ai-redirections-wrap {
+    max-width: 1180px;
+}
+
+.omi-seo-ai-redirections-wrap .omi-seo-ai-bridge-card + .omi-seo-ai-bridge-card {
+    margin-top: 18px;
+}
+
+.omi-seo-redirection-form {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(280px, 1.4fr) 120px auto;
+    align-items: end;
+    gap: 14px;
+}
+
+.omi-seo-redirection-form label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.omi-seo-redirection-form input.regular-text {
+    width: 100%;
+}
+
+.omi-seo-redirection-enabled {
+    padding-bottom: 5px;
+    white-space: nowrap;
+}
+
+.omi-seo-redirection-list {
+    overflow-x: auto;
+}
+
+.omi-seo-redirection-list code {
+    overflow-wrap: anywhere;
+}
+
+.omi-seo-redirection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.omi-seo-redirection-actions form {
+    margin: 0;
+}
+
+@media (max-width: 900px) {
+    .omi-seo-redirection-form {
+        grid-template-columns: 1fr;
+    }
+}

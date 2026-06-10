@@ -719,8 +719,29 @@ final class Rest_Controller
             $body = [];
         }
 
+        $oldPostType = (string) $post->post_type;
+        $oldPermalink = Permalink_Resolver::for_post($postId);
         $update = ['ID' => $postId];
         $changed = false;
+        $postTypeChanged = false;
+
+        $requestedPostType = isset($body['post_type'])
+            ? sanitize_key((string) $body['post_type'])
+            : '';
+        if ($requestedPostType !== '') {
+            if (! in_array($requestedPostType, ['post', 'product'], true) || ! post_type_exists($requestedPostType)) {
+                return new WP_REST_Response([
+                    'success' => false,
+                    'message' => 'Unsupported WordPress post type.',
+                ], 422);
+            }
+
+            if ($requestedPostType !== $oldPostType) {
+                $update['post_type'] = $requestedPostType;
+                $changed = true;
+                $postTypeChanged = true;
+            }
+        }
 
         $title = isset($body['title']) ? trim((string) $body['title']) : '';
         if ($title !== '') {
@@ -791,7 +812,21 @@ final class Rest_Controller
             }
         }
 
-        $virtualResult = self::apply_virtual_comments_from_body($postId, $body, $post->post_type === 'product');
+        $updatedPost = get_post($postId);
+        if (! $updatedPost instanceof \WP_Post) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Post was updated but could not be reloaded.',
+            ], 422);
+        }
+
+        $newPermalink = Permalink_Resolver::for_post($postId);
+        $redirectCreated = false;
+        if ($postTypeChanged) {
+            $redirectCreated = Redirection_Manager::add_auto($oldPermalink, $newPermalink, $postId);
+        }
+
+        $virtualResult = self::apply_virtual_comments_from_body($postId, $body, $updatedPost->post_type === 'product');
         $virtualCount = (int) ($virtualResult['count'] ?? 0);
         $virtualError = (string) ($virtualResult['error'] ?? '');
 
@@ -805,16 +840,34 @@ final class Rest_Controller
             }
         }
 
+        $message = 'Đã đồng bộ bài viết từ SEO editor.';
+        if ($postTypeChanged) {
+            $message .= sprintf(
+                ' Đã chuyển post type từ %s sang %s.',
+                $oldPostType,
+                (string) $updatedPost->post_type
+            );
+            if ($redirectCreated) {
+                $message .= ' Đã tạo redirect 301 cho URL cũ.';
+            }
+        }
+
         $response = [
             'success' => true,
-            'message' => 'Đã đồng bộ bài viết từ SEO editor.',
+            'message' => $message,
             'wp_post_id' => $postId,
+            'post_type' => (string) $updatedPost->post_type,
+            'previous_post_type' => $oldPostType,
+            'post_type_changed' => $postTypeChanged,
+            'redirect_created' => $redirectCreated,
             'slug' => (string) get_post_field('post_name', $postId),
-            'permalink' => Permalink_Resolver::for_post($postId),
+            'permalink' => $newPermalink,
             'faq_count' => $faqCount,
             'virtual_count' => $virtualCount,
             'seo_applied' => $seoApplied,
         ];
+        $response['post_date'] = (string) $updatedPost->post_date;
+        $response['post_modified'] = (string) $updatedPost->post_modified;
 
         if ($virtualError !== '') {
             $response['virtual_comments_error'] = $virtualError;
@@ -887,6 +940,8 @@ final class Rest_Controller
             'wp_post_id' => $postId,
             'slug' => (string) get_post_field('post_name', $postId),
             'permalink' => Permalink_Resolver::for_post($postId),
+            'post_date' => (string) get_post_field('post_date', $postId),
+            'post_modified' => (string) get_post_field('post_modified', $postId),
         ], 201);
     }
 
@@ -1358,6 +1413,8 @@ final class Rest_Controller
                 'title' => (string) ($mapped['title'] ?? ''),
                 'slug' => (string) ($mapped['slug'] ?? ''),
                 'status' => (string) ($mapped['status'] ?? ''),
+                'post_date' => (string) ($mapped['post_date'] ?? ''),
+                'post_modified' => (string) ($mapped['post_modified'] ?? ''),
                 'published_at' => $mapped['published_at'] ?? null,
                 'post_content' => (string) ($mapped['post_content'] ?? ''),
                 'featured_image_url' => (string) ($mapped['featured_image_url'] ?? ''),

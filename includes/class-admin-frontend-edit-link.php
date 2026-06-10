@@ -13,10 +13,13 @@ if (! defined('ABSPATH')) {
  */
 final class Admin_Frontend_Edit_Link
 {
+    public const OPTION_ADMIN_BAR_ENABLED = 'omi_seo_ai_admin_bar_edit_enabled';
+
     private static bool $rendered = false;
 
     public static function register(): void
     {
+        add_action('admin_bar_menu', [self::class, 'addAdminBarEditLink'], 90);
         add_action('wp_enqueue_scripts', [self::class, 'enqueueAssets']);
         add_filter('the_title', [self::class, 'filterSingularTitle'], 99, 2);
         add_filter('get_the_archive_title', [self::class, 'filterArchiveTitle'], 99);
@@ -28,6 +31,42 @@ final class Admin_Frontend_Edit_Link
 
         add_action('flatsome_after_page_title', [self::class, 'renderStandalone'], 10);
         add_action('wp_footer', [self::class, 'renderFooterInjection'], 5);
+    }
+
+    public static function adminBarEnabled(): bool
+    {
+        return (string) get_option(self::OPTION_ADMIN_BAR_ENABLED, '1') === '1';
+    }
+
+    public static function addAdminBarEditLink(\WP_Admin_Bar $adminBar): void
+    {
+        if (! self::adminBarEnabled() || ! is_admin_bar_showing() || ! self::shouldOfferButton()) {
+            return;
+        }
+
+        $context = self::resolveContext();
+        if ($context === null) {
+            return;
+        }
+
+        $url = self::buildLaravelRedirectUrl($context['wp_id'], $context['type']);
+        if ($url === '') {
+            return;
+        }
+
+        $adminBar->add_node([
+            'id' => 'omi-seo-ai-edit-on-laravel',
+            'title' => '<span class="ab-icon dashicons dashicons-edit" aria-hidden="true"></span>'
+                . '<span class="ab-label">'
+                . esc_html__('Sửa trên Laravel', 'omi-seo-ai-bridge')
+                . '</span>',
+            'href' => $url,
+            'meta' => [
+                'target' => '_blank',
+                'rel' => 'noopener noreferrer',
+                'title' => esc_attr__('Mở nội dung trong trình biên tập Laravel', 'omi-seo-ai-bridge'),
+            ],
+        ]);
     }
 
     public static function enqueueAssets(): void

@@ -249,6 +249,8 @@ final class Sync_Provider
             'product_gallery' => $productGallery,
             'post_images'     => $postImages,
             'status'       => (string) $post->post_status,
+            'post_date'    => (string) $post->post_date,
+            'post_modified' => (string) $post->post_modified,
             'published_at' => $post->post_status === 'publish'
                 ? get_post_time('c', true, $post)
                 : null,
