@@ -762,6 +762,13 @@ final class Rest_Controller
             $changed = true;
         }
 
+        $postDate = self::normalize_post_date($body['post_date'] ?? null);
+        if ($postDate !== '') {
+            $update['post_date'] = $postDate;
+            $update['post_date_gmt'] = get_gmt_from_date($postDate);
+            $changed = true;
+        }
+
         $postContent = $body['post_content'] ?? null;
         if (is_string($postContent) && $postContent !== '') {
             $update['post_content'] = $postContent;
@@ -880,6 +887,27 @@ final class Rest_Controller
         return new WP_REST_Response($response, 200);
     }
 
+    private static function normalize_post_date($value): string
+    {
+        $date = is_string($value) ? trim($value) : '';
+        if ($date === '') {
+            return '';
+        }
+
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/', $date)) {
+            return '';
+        }
+
+        $date = str_replace('T', ' ', $date);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $date .= ' 00:00:00';
+        } elseif (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $date)) {
+            $date .= ':00';
+        }
+
+        return strtotime($date) !== false ? $date : '';
+    }
+
     public static function handle_create_post(WP_REST_Request $request): WP_REST_Response
     {
         $body = $request->get_json_params();
@@ -913,6 +941,12 @@ final class Rest_Controller
             'post_status' => $status,
             'post_type' => $postType,
         ];
+        $postDate = self::normalize_post_date($body['post_date'] ?? null);
+        if ($postDate !== '') {
+            $postData['post_date'] = $postDate;
+            $postData['post_date_gmt'] = get_gmt_from_date($postDate);
+        }
+
         $requestedSlug = sanitize_title((string) ($body['slug'] ?? ''));
         if ($requestedSlug !== '') {
             $postData['post_name'] = $requestedSlug;
