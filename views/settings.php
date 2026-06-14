@@ -7,7 +7,18 @@ if (! defined('ABSPATH')) {
 
 $read_value    = (string) get_option(OMI_SEO_AI_BRIDGE_OPTION_READ, '');
 $write_value   = (string) get_option(OMI_SEO_AI_BRIDGE_OPTION_WRITE, '');
-$laravel_value = (string) get_option(OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL, '');
+$laravel_dev_value = function_exists('omi_seo_ai_bridge_laravel_api_url_dev')
+    ? omi_seo_ai_bridge_laravel_api_url_dev()
+    : (string) get_option(OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL_DEV, '');
+$laravel_production_value = function_exists('omi_seo_ai_bridge_laravel_api_url_production')
+    ? omi_seo_ai_bridge_laravel_api_url_production()
+    : (string) get_option(OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL_PRODUCTION, '');
+$active_laravel_url = function_exists('omi_seo_ai_bridge_laravel_api_url')
+    ? omi_seo_ai_bridge_laravel_api_url()
+    : '';
+$active_laravel_env = function_exists('omi_seo_ai_bridge_is_dev_environment') && omi_seo_ai_bridge_is_dev_environment()
+    ? 'dev'
+    : 'production';
 $auto_push     = function_exists('omi_seo_ai_bridge_auto_push_enabled') && omi_seo_ai_bridge_auto_push_enabled();
 $show_saved    = isset($_GET['updated']) && sanitize_key((string) wp_unslash($_GET['updated'])) === '1';
 $last_push_at  = (string) get_option('omi_seo_last_push_at', '');
@@ -110,21 +121,53 @@ $localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warnin
             </div>
 
             <div class="omi-seo-ai-bridge-row">
-                <label for="omi_seo_laravel_api_url"><?php esc_html_e('LARAVEL API URL', 'omi-seo-ai-bridge'); ?></label>
+                <label for="omi_seo_laravel_api_url_dev"><?php esc_html_e('LARAVEL API URL (Dev)', 'omi-seo-ai-bridge'); ?></label>
                 <input
                     type="url"
-                    name="omi_seo_laravel_api_url"
-                    id="omi_seo_laravel_api_url"
+                    name="omi_seo_laravel_api_url_dev"
+                    id="omi_seo_laravel_api_url_dev"
                     class="omi-seo-ai-bridge-input"
-                    value="<?php echo esc_attr($laravel_value); ?>"
+                    value="<?php echo esc_attr($laravel_dev_value); ?>"
                     placeholder="http://127.0.0.1:8000"
                     autocomplete="off"
                     spellcheck="false"
                 />
                 <p class="description" style="margin-top: 8px;">
-                    <?php esc_html_e('Production phải dùng domain/public URL của Laravel, không dùng localhost.', 'omi-seo-ai-bridge'); ?>
+                    <?php esc_html_e('Dùng khi WordPress chạy local/dev (localhost, .local, .test hoặc WP_ENVIRONMENT_TYPE=local/development).', 'omi-seo-ai-bridge'); ?>
                 </p>
             </div>
+
+            <div class="omi-seo-ai-bridge-row">
+                <label for="omi_seo_laravel_api_url_production"><?php esc_html_e('LARAVEL API URL (Production)', 'omi-seo-ai-bridge'); ?></label>
+                <input
+                    type="url"
+                    name="omi_seo_laravel_api_url_production"
+                    id="omi_seo_laravel_api_url_production"
+                    class="omi-seo-ai-bridge-input"
+                    value="<?php echo esc_attr($laravel_production_value); ?>"
+                    placeholder="https://api.example.com"
+                    autocomplete="off"
+                    spellcheck="false"
+                />
+                <p class="description" style="margin-top: 8px;">
+                    <?php esc_html_e('Dùng khi WordPress chạy trên domain public (production/staging). Không dùng localhost.', 'omi-seo-ai-bridge'); ?>
+                </p>
+            </div>
+
+            <?php if ($active_laravel_url !== '') : ?>
+                <p class="description" style="margin: 0 0 16px;">
+                    <?php
+                    printf(
+                        /* translators: 1: environment label, 2: active URL */
+                        esc_html__('URL đang dùng (%1$s): %2$s', 'omi-seo-ai-bridge'),
+                        $active_laravel_env === 'dev'
+                            ? esc_html__('Dev', 'omi-seo-ai-bridge')
+                            : esc_html__('Production', 'omi-seo-ai-bridge'),
+                        esc_html($active_laravel_url)
+                    );
+                    ?>
+                </p>
+            <?php endif; ?>
 
             <?php
             $rest_log_enabled = (bool) get_option('omi_seo_ai_rest_log', true);
@@ -220,7 +263,7 @@ $localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warnin
 
         <h3 style="margin: 0 0 12px;"><?php esc_html_e('Kiểm tra đồng bộ Laravel', 'omi-seo-ai-bridge'); ?></h3>
         <p class="description" style="margin-bottom: 16px;">
-            <?php esc_html_e('Dùng http://127.0.0.1:8000 chỉ khi WordPress và Laravel cùng máy. Production phải dùng URL public.', 'omi-seo-ai-bridge'); ?>
+            <?php esc_html_e('Plugin tự chọn URL Dev hoặc Production theo môi trường WordPress. Dev: http://127.0.0.1:8000 khi WP và Laravel cùng máy. Production: domain public của Laravel.', 'omi-seo-ai-bridge'); ?>
         </p>
 
         <div class="omi-seo-ai-bridge-actions">

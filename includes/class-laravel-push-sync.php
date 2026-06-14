@@ -402,7 +402,7 @@ final class Laravel_Push_Sync
         if (self::push_endpoint_url() === '') {
             return [
                 'ok' => false,
-                'message' => 'Chưa nhập LARAVEL API URL (vd: http://127.0.0.1:8000).',
+                'message' => 'Chưa nhập LARAVEL API URL cho môi trường hiện tại (Dev hoặc Production).',
             ];
         }
 

@@ -847,6 +847,22 @@ final class Rest_Controller
             }
         }
 
+        $categoryCount = 0;
+        if (isset($body['category_ids']) && is_array($body['category_ids'])) {
+            $taxonomy = (string) $updatedPost->post_type === 'product' ? 'product_cat' : 'category';
+            $termIds = array_values(array_unique(array_filter(
+                array_map('intval', $body['category_ids']),
+                static fn (int $id): bool => $id > 0,
+            )));
+
+            if ($termIds !== [] && taxonomy_exists($taxonomy)) {
+                $result = wp_set_object_terms($postId, $termIds, $taxonomy, false);
+                if (! is_wp_error($result)) {
+                    $categoryCount = count($termIds);
+                }
+            }
+        }
+
         $message = 'Đã đồng bộ bài viết từ SEO editor.';
         if ($postTypeChanged) {
             $message .= sprintf(
@@ -870,6 +886,7 @@ final class Rest_Controller
             'slug' => (string) get_post_field('post_name', $postId),
             'permalink' => $newPermalink,
             'faq_count' => $faqCount,
+            'category_count' => $categoryCount,
             'virtual_count' => $virtualCount,
             'seo_applied' => $seoApplied,
         ];
@@ -1234,6 +1251,10 @@ final class Rest_Controller
             $update['slug'] = $slug;
         }
 
+        if (array_key_exists('parent_id', $body)) {
+            $update['parent'] = max(0, (int) $body['parent_id']);
+        }
+
         $description = null;
         $rawDescription = $body['post_content'] ?? null;
         if (is_string($rawDescription) && $rawDescription !== '') {
@@ -1336,6 +1357,7 @@ final class Rest_Controller
                 'slug' => (string) ($mapped['slug'] ?? ''),
                 'status' => (string) ($mapped['status'] ?? 'publish'),
                 'published_at' => $mapped['published_at'] ?? null,
+                'parent_id' => (int) ($mapped['parent_id'] ?? 0),
                 'post_content' => (string) ($mapped['post_content'] ?? ''),
                 'featured_image_url' => (string) ($mapped['featured_image_url'] ?? ''),
                 'product_gallery' => is_array($mapped['product_gallery'] ?? null)
@@ -1462,6 +1484,9 @@ final class Rest_Controller
                 'wp_entity' => 'post',
                 'type' => (string) ($mapped['type'] ?? ''),
                 'wp_post_type' => (string) ($mapped['wp_post_type'] ?? ''),
+                'category_ids' => is_array($mapped['category_ids'] ?? null)
+                    ? $mapped['category_ids']
+                    : [],
                 'faqs' => is_array($mapped['faqs'] ?? null) ? $mapped['faqs'] : [],
                 'seo' => is_array($mapped['seo'] ?? null) ? $mapped['seo'] : [],
             ],

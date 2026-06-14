@@ -183,6 +183,7 @@ final class Sync_Provider
         $description = (string) $term->description;
 
         return [
+            'parent_id'              => (int) $term->parent,
             'wp_id'              => $termId,
             'type'               => $seoType,
             'wp_post_type'       => $taxonomy,
@@ -241,6 +242,7 @@ final class Sync_Provider
             'slug'         => (string) $post->post_name,
             'permalink'    => $this->resolve_post_permalink($post),
             'post_content' => (string) $post->post_content,
+            'category_ids' => $this->resolve_post_category_ids($post),
             'faqs'         => Faq_Shortcode::resolve_faqs_for_post($postId),
             'virtual_comments' => Virtual_Comments::get_virtual_items($postId),
             'schema_json_ld' => Schema_Ld_Exporter::for_post($postId),
@@ -263,6 +265,23 @@ final class Sync_Provider
                 'focus_keyword'    => $seo['focus_keyword'],
             ],
         ];
+    }
+
+    /**
+     * WP term IDs gán cho post/product (category hoặc product_cat).
+     *
+     * @return list<int>
+     */
+    private function resolve_post_category_ids(\WP_Post $post): array
+    {
+        $taxonomy = (string) $post->post_type === 'product' ? 'product_cat' : 'category';
+        $termIds = wp_get_post_terms((int) $post->ID, $taxonomy, ['fields' => 'ids']);
+
+        if (is_wp_error($termIds) || ! is_array($termIds)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(array_map('intval', $termIds), static fn (int $id): bool => $id > 0)));
     }
 
     /**

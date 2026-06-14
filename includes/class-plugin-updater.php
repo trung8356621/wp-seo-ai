@@ -21,8 +21,6 @@ final class Plugin_Updater
 
     private string $plugin_slug;
 
-    private string $current_version;
-
     private string $update_url;
 
     private function __construct(string $plugin_file)
@@ -33,7 +31,6 @@ final class Plugin_Updater
         $this->plugin_slug = ($slugDir === '.' || $slugDir === '\\')
             ? basename($this->plugin_basename, '.php')
             : $slugDir;
-        $this->current_version = $this->resolve_installed_version();
         $this->update_url = $this->resolve_update_check_url();
     }
 
@@ -46,6 +43,7 @@ final class Plugin_Updater
 
         add_filter('pre_set_site_transient_update_plugins', [$updater, 'check_for_update']);
         add_filter('plugins_api', [$updater, 'get_plugin_info'], 20, 3);
+        add_action('upgrader_process_complete', [$updater, 'clear_update_cache_after_upgrade'], 10, 2);
     }
 
     /**
@@ -54,7 +52,11 @@ final class Plugin_Updater
      */
     public function check_for_update($transient)
     {
-        if (! is_object($transient) || empty($transient->checked)) {
+        if (! is_object($transient) || empty($transient->checked) || ! is_array($transient->checked)) {
+            return $transient;
+        }
+
+        if (! array_key_exists($this->plugin_basename, $transient->checked)) {
             return $transient;
         }
 
@@ -63,8 +65,13 @@ final class Plugin_Updater
             return $transient;
         }
 
-        $new_version = (string) ($remote['version'] ?? '');
-        if ($new_version === '' || version_compare($this->current_version, $new_version, '>=')) {
+        $new_version = $this->normalize_version((string) ($remote['version'] ?? ''));
+        $installed_version = $this->resolve_installed_version_for_check($transient);
+
+        if ($new_version === '' || version_compare($installed_version, $new_version, '>=')) {
+            unset($transient->response[$this->plugin_basename]);
+            $this->mark_no_update($transient, $remote, $installed_version, $new_version);
+
             return $transient;
         }
 
@@ -84,8 +91,52 @@ final class Plugin_Updater
         $update->requires_php = (string) ($remote['requires_php'] ?? '');
 
         $transient->response[$this->plugin_basename] = $update;
+        unset($transient->no_update[$this->plugin_basename]);
 
         return $transient;
+    }
+
+    /**
+     * @param  object  $transient
+     * @param  array<string, mixed>  $remote
+     */
+    private function mark_no_update(object $transient, array $remote, string $installed_version, string $new_version): void
+    {
+        if (! isset($transient->no_update) || ! is_array($transient->no_update)) {
+            $transient->no_update = [];
+        }
+
+        $item = new \stdClass();
+        $item->slug = $this->plugin_slug;
+        $item->plugin = $this->plugin_basename;
+        $item->new_version = $new_version !== '' ? $new_version : $installed_version;
+        $item->url = (string) ($remote['author_profile'] ?? '');
+        $item->package = (string) ($remote['download_url'] ?? '');
+        $item->id = $this->plugin_basename;
+        $item->tested = (string) ($remote['tested'] ?? '');
+        $item->requires = (string) ($remote['requires'] ?? '');
+        $item->requires_php = (string) ($remote['requires_php'] ?? '');
+
+        $transient->no_update[$this->plugin_basename] = $item;
+    }
+
+    /**
+     * @param  object  $transient
+     */
+    private function resolve_installed_version_for_check(object $transient): string
+    {
+        $checked = $this->normalize_version((string) ($transient->checked[$this->plugin_basename] ?? ''));
+        $header = $this->resolve_installed_version();
+
+        if ($checked === '') {
+            return $header;
+        }
+
+        if ($header === '') {
+            return $checked;
+        }
+
+        return version_compare($checked, $header, '>') ? $checked : $header;
     }
 
     /**
@@ -113,7 +164,7 @@ final class Plugin_Updater
         $info = new \stdClass();
         $info->name = (string) ($remote['name'] ?? $this->plugin_slug);
         $info->slug = $this->plugin_slug;
-        $info->version = (string) ($remote['version'] ?? $this->current_version);
+        $info->version = (string) ($remote['version'] ?? $this->resolve_installed_version());
         $info->author = (string) ($remote['author'] ?? '');
         $info->author_profile = (string) ($remote['author_profile'] ?? '');
         $info->requires = (string) ($remote['requires'] ?? '');
@@ -139,6 +190,33 @@ final class Plugin_Updater
         }
 
         return $info;
+    }
+
+    /**
+     * @param  mixed  $upgrader
+     * @param  array<string, mixed>  $hook_extra
+     */
+    public function clear_update_cache_after_upgrade($upgrader, array $hook_extra): void
+    {
+        unset($upgrader);
+
+        if (($hook_extra['type'] ?? '') !== 'plugin') {
+            return;
+        }
+
+        $plugins = $hook_extra['plugins'] ?? null;
+        if (is_array($plugins) && in_array($this->plugin_basename, $plugins, true)) {
+            wp_clean_plugins_cache(true);
+            delete_site_transient('update_plugins');
+
+            return;
+        }
+
+        $plugin = $hook_extra['plugin'] ?? null;
+        if (is_string($plugin) && $plugin === $this->plugin_basename) {
+            wp_clean_plugins_cache(true);
+            delete_site_transient('update_plugins');
+        }
     }
 
     /**
@@ -174,15 +252,20 @@ final class Plugin_Updater
         }
 
         $data = get_plugin_data($this->plugin_file, false, false);
-        $headerVersion = trim((string) ($data['Version'] ?? ''));
+        $headerVersion = $this->normalize_version((string) ($data['Version'] ?? ''));
 
         if ($headerVersion !== '') {
             return $headerVersion;
         }
 
         return defined('OMI_SEO_AI_BRIDGE_VERSION')
-            ? (string) OMI_SEO_AI_BRIDGE_VERSION
+            ? $this->normalize_version((string) OMI_SEO_AI_BRIDGE_VERSION)
             : '0.0.0';
+    }
+
+    private function normalize_version(string $version): string
+    {
+        return trim($version);
     }
 
     private function resolve_update_check_url(): string
