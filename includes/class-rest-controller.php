@@ -36,6 +36,18 @@ final class Rest_Controller
             ],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/sync/manifest', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_sync_manifest'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/sync/items', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_sync_items'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/site-info', [
             'methods'             => WP_REST_Server::READABLE,
             'callback'            => [self::class, 'handle_site_info'],
@@ -1489,6 +1501,9 @@ final class Rest_Controller
                     : [],
                 'faqs' => is_array($mapped['faqs'] ?? null) ? $mapped['faqs'] : [],
                 'seo' => is_array($mapped['seo'] ?? null) ? $mapped['seo'] : [],
+                'multilingual' => is_array($mapped['multilingual'] ?? null)
+                    ? $mapped['multilingual']
+                    : Polylang_Sync::multilingual_field_for_post($postId),
             ],
         ], 200);
     }
@@ -1525,6 +1540,36 @@ final class Rest_Controller
             'is_test' => $isTest,
             'limit_per_type' => $limitPerType,
             'counts'  => $payload['counts'],
+            'items'   => $payload['items'],
+        ], 200);
+    }
+
+    public static function handle_sync_manifest(WP_REST_Request $request): WP_REST_Response
+    {
+        unset($request);
+
+        $provider = new Sync_Provider();
+        $payload = $provider->collect_manifest();
+
+        return new WP_REST_Response([
+            'success' => true,
+            'message' => 'Sync manifest generated.',
+            'counts'  => $payload['counts'],
+            'entries' => $payload['entries'],
+        ], 200);
+    }
+
+    public static function handle_sync_items(WP_REST_Request $request): WP_REST_Response
+    {
+        $body = $request->get_json_params();
+        $refs = is_array($body['refs'] ?? null) ? $body['refs'] : [];
+
+        $provider = new Sync_Provider();
+        $payload = $provider->collect_items($refs);
+
+        return new WP_REST_Response([
+            'success' => true,
+            'message' => 'Sync items payload generated.',
             'items'   => $payload['items'],
         ], 200);
     }

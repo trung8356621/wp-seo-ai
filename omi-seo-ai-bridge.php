@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.39
+ * Version:           1.0.41
  * Author:            TVH
  */
 
@@ -12,7 +12,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.39');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.41');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL', 'omi_seo_laravel_api_url');
@@ -29,6 +29,7 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-renamer.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-variant-repair.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-binary-replacer.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-sync-provider.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-polylang-sync.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-comment-review-publisher.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-schema-ld-exporter.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-virtual-comments.php';

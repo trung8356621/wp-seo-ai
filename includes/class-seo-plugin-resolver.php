@@ -70,6 +70,7 @@ final class Seo_Plugin_Resolver
             'site_url'          => (string) home_url('/'),
             'bridge_version'    => defined('OMI_SEO_AI_BRIDGE_VERSION') ? (string) OMI_SEO_AI_BRIDGE_VERSION : '',
             'permalink'         => self::permalink_settings(),
+            'polylang'          => Polylang_Sync::site_info(),
         ];
     }
 

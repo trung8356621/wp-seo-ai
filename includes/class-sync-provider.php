@@ -29,6 +29,70 @@ final class Sync_Provider
     }
 
     /**
+     * Danh sách nhẹ wp_id + modified để Laravel so sánh incremental sync.
+     *
+     * @return array{counts: array<string, int>, entries: array<int, array<string, mixed>>}
+     */
+    public function collect_manifest(): array
+    {
+        $entries = [];
+        $counts = [];
+
+        $this->collect_post_manifest('post', 'article', $entries, $counts);
+        $this->collect_post_manifest('page', 'article', $entries, $counts);
+        $this->collect_product_manifest($entries, $counts);
+        $this->collect_term_manifest('category', 'category', $entries, $counts);
+        $this->collect_term_manifest('product_cat', 'product_category', $entries, $counts);
+
+        return [
+            'counts'  => $counts,
+            'entries' => $entries,
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $refs
+     * @return array{items: array<int, array<string, mixed>>}
+     */
+    public function collect_items(array $refs): array
+    {
+        $items = [];
+
+        foreach ($refs as $ref) {
+            if (! is_array($ref)) {
+                continue;
+            }
+
+            $wpId = (int) ($ref['wp_id'] ?? 0);
+            if ($wpId <= 0) {
+                continue;
+            }
+
+            $entity = (string) ($ref['wp_entity'] ?? 'post');
+            if ($entity === 'term') {
+                $taxonomy = (string) ($ref['wp_post_type'] ?? '');
+                if ($taxonomy === '') {
+                    continue;
+                }
+
+                $mapped = $this->map_term_by_id($taxonomy, $wpId);
+                if ($mapped !== null) {
+                    $items[] = $mapped;
+                }
+
+                continue;
+            }
+
+            $mapped = $this->map_post_by_id($wpId);
+            if ($mapped !== null) {
+                $items[] = $mapped;
+            }
+        }
+
+        return ['items' => $items];
+    }
+
+    /**
      * @return array{counts: array<string, int>, items: array<int, array<string, mixed>>}
      */
     public function collect(int $limitPerType = 0): array
@@ -102,6 +166,108 @@ final class Sync_Provider
         }
 
         $this->collect_posts('product', 'product', $limitPerType, $items, $counts);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $entries
+     * @param array<string, int> $counts
+     */
+    private function collect_post_manifest(string $postType, string $seoType, array &$entries, array &$counts): void
+    {
+        if (! post_type_exists($postType)) {
+            $counts[$postType === 'page' ? 'page' : $seoType] = 0;
+            return;
+        }
+
+        $query = new \WP_Query([
+            'post_type'              => $postType,
+            'post_status'            => ['publish', 'draft', 'pending', 'future', 'private'],
+            'posts_per_page'         => -1,
+            'orderby'                => 'modified',
+            'order'                  => 'DESC',
+            'no_found_rows'          => true,
+            'fields'                 => 'ids',
+            'update_post_meta_cache' => false,
+            'update_post_term_cache' => false,
+        ]);
+
+        $countKey = $postType === 'page' ? 'page' : $seoType;
+        $synced = 0;
+
+        foreach ($query->posts as $postId) {
+            $postId = (int) $postId;
+            if ($postId <= 0 || self::is_sync_excluded_post($postId)) {
+                continue;
+            }
+
+            $post = get_post($postId);
+            if (! $post instanceof \WP_Post) {
+                continue;
+            }
+
+            $entries[] = [
+                'wp_id'         => $postId,
+                'type'          => $seoType,
+                'wp_post_type'  => $postType,
+                'wp_entity'     => 'post',
+                'post_modified' => (string) $post->post_modified,
+            ];
+            $synced++;
+        }
+
+        $counts[$countKey] = $synced;
+        wp_reset_postdata();
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $entries
+     * @param array<string, int> $counts
+     */
+    private function collect_product_manifest(array &$entries, array &$counts): void
+    {
+        if (! post_type_exists('product')) {
+            $counts['product'] = 0;
+            return;
+        }
+
+        $this->collect_post_manifest('product', 'product', $entries, $counts);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $entries
+     * @param array<string, int> $counts
+     */
+    private function collect_term_manifest(string $taxonomy, string $seoType, array &$entries, array &$counts): void
+    {
+        if (! taxonomy_exists($taxonomy)) {
+            $counts[$seoType] = 0;
+            return;
+        }
+
+        $terms = get_terms([
+            'taxonomy'   => $taxonomy,
+            'hide_empty' => false,
+        ]);
+
+        if (is_wp_error($terms) || ! is_array($terms)) {
+            $counts[$seoType] = 0;
+            return;
+        }
+
+        $counts[$seoType] = count($terms);
+
+        foreach ($terms as $term) {
+            if (! $term instanceof \WP_Term) {
+                continue;
+            }
+
+            $entries[] = [
+                'wp_id'        => (int) $term->term_id,
+                'type'         => $seoType,
+                'wp_post_type' => $taxonomy,
+                'wp_entity'    => 'term',
+            ];
+        }
     }
 
     /**
@@ -206,6 +372,7 @@ final class Sync_Provider
                 'meta_description' => $seo['meta_description'],
                 'focus_keyword'    => $seo['focus_keyword'],
             ],
+            'multilingual'       => Polylang_Sync::multilingual_field_for_term($termId),
         ];
     }
 
@@ -264,6 +431,7 @@ final class Sync_Provider
                 'meta_description' => $seo['meta_description'],
                 'focus_keyword'    => $seo['focus_keyword'],
             ],
+            'multilingual' => Polylang_Sync::multilingual_field_for_post($postId),
         ];
     }
 
