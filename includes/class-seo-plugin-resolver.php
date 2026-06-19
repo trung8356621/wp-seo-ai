@@ -508,8 +508,13 @@ final class Seo_Plugin_Resolver
         $applied = false;
 
         if ($seoTitle !== null) {
-            update_post_meta($postId, 'rank_math_title', $seoTitle);
-            update_post_meta($postId, '_rank_math_title', $seoTitle);
+            if ($seoTitle === '') {
+                delete_post_meta($postId, 'rank_math_title');
+                delete_post_meta($postId, '_rank_math_title');
+            } else {
+                update_post_meta($postId, 'rank_math_title', $seoTitle);
+                update_post_meta($postId, '_rank_math_title', $seoTitle);
+            }
             $applied = true;
         }
 
@@ -566,8 +571,13 @@ final class Seo_Plugin_Resolver
         $applied = false;
 
         if ($seoTitle !== null) {
-            update_term_meta($termId, 'rank_math_title', $seoTitle);
-            update_term_meta($termId, 'rank_math_seo_title', $seoTitle);
+            if ($seoTitle === '') {
+                delete_term_meta($termId, 'rank_math_title');
+                delete_term_meta($termId, 'rank_math_seo_title');
+            } else {
+                update_term_meta($termId, 'rank_math_title', $seoTitle);
+                update_term_meta($termId, 'rank_math_seo_title', $seoTitle);
+            }
             $applied = true;
         }
 

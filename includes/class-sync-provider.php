@@ -123,14 +123,14 @@ final class Sync_Provider
             return;
         }
 
-        $queryArgs = [
+        $queryArgs = array_merge([
             'post_type'      => $postType,
             'post_status'    => ['publish', 'draft', 'pending', 'future', 'private'],
             'posts_per_page' => $limitPerType > 0 ? $limitPerType : -1,
             'orderby'        => 'modified',
             'order'          => 'DESC',
             'no_found_rows'  => true,
-        ];
+        ], Polylang_Sync::query_args_for_all_languages());
 
         $query = new \WP_Query($queryArgs);
         $countKey = $postType === 'page' ? 'page' : $seoType;
@@ -179,7 +179,7 @@ final class Sync_Provider
             return;
         }
 
-        $query = new \WP_Query([
+        $query = new \WP_Query(array_merge([
             'post_type'              => $postType,
             'post_status'            => ['publish', 'draft', 'pending', 'future', 'private'],
             'posts_per_page'         => -1,
@@ -189,7 +189,7 @@ final class Sync_Provider
             'fields'                 => 'ids',
             'update_post_meta_cache' => false,
             'update_post_term_cache' => false,
-        ]);
+        ], Polylang_Sync::query_args_for_all_languages()));
 
         $countKey = $postType === 'page' ? 'page' : $seoType;
         $synced = 0;
@@ -244,10 +244,10 @@ final class Sync_Provider
             return;
         }
 
-        $terms = get_terms([
+        $terms = get_terms(array_merge([
             'taxonomy'   => $taxonomy,
             'hide_empty' => false,
-        ]);
+        ], Polylang_Sync::query_args_for_all_languages()));
 
         if (is_wp_error($terms) || ! is_array($terms)) {
             $counts[$seoType] = 0;
@@ -281,10 +281,10 @@ final class Sync_Provider
             return;
         }
 
-        $termArgs = [
+        $termArgs = array_merge([
             'taxonomy'   => $taxonomy,
             'hide_empty' => false,
-        ];
+        ], Polylang_Sync::query_args_for_all_languages());
         if ($limitPerType > 0) {
             $termArgs['number'] = $limitPerType;
         }

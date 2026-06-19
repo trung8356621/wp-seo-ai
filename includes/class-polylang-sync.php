@@ -73,6 +73,20 @@ final class Polylang_Sync
     }
 
     /**
+     * WP_Query / get_terms args để lấy nội dung mọi ngôn ngữ Polylang (không lọc theo ngôn ngữ hiện tại).
+     *
+     * @return array<string, string>
+     */
+    public static function query_args_for_all_languages(): array
+    {
+        if (! self::is_active()) {
+            return [];
+        }
+
+        return ['lang' => ''];
+    }
+
+    /**
      * @return array{current_lang: string, translations: array<string, int>}|null
      */
     public static function payload_for_post(int $postId): ?array
