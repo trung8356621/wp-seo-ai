@@ -287,6 +287,11 @@ final class Laravel_Push_Sync
         $message = is_array($json) ? (string) ($json['message'] ?? $body) : $body;
 
         if ($code >= 200 && $code < 300 && is_array($json) && ($json['success'] ?? false)) {
+            $connectionHash = trim((string) ($json['connection_hash'] ?? ''));
+            if ($connectionHash !== '' && function_exists('omi_seo_ai_bridge_save_connection_hash')) {
+                omi_seo_ai_bridge_save_connection_hash($connectionHash);
+            }
+
             return ['success' => true, 'message' => $message, 'http_code' => $code];
         }
 

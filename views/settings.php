@@ -245,7 +245,7 @@ $localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warnin
                         value="1"
                         <?php checked(\OmiSeoAiBridge\Admin_Frontend_Edit_Link::adminBarEnabled()); ?>
                     />
-                    <?php esc_html_e('Hiển thị nút “Sửa trên Laravel” trong Admin Bar ở trang bài viết, sản phẩm và danh mục.', 'omi-seo-ai-bridge'); ?>
+                    <?php esc_html_e('Hiển thị nút “Sửa trên Laravel” trong Admin Bar và hộp xuất bản khi sửa bài/sản phẩm. Hover nút để mở link Dev (localhost) nếu đã cấu hình LARAVEL API URL (Dev).', 'omi-seo-ai-bridge'); ?>
                 </label>
                 <p class="description" style="margin-top:8px;">
                     <?php esc_html_e('Nút này không phụ thuộc giao diện theme và chỉ hiện với người có quyền sửa nội dung hiện tại.', 'omi-seo-ai-bridge'); ?>

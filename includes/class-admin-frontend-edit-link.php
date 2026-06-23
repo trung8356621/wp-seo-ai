@@ -21,6 +21,8 @@ final class Admin_Frontend_Edit_Link
     {
         add_action('admin_bar_menu', [self::class, 'addAdminBarEditLink'], 90);
         add_action('wp_enqueue_scripts', [self::class, 'enqueueAssets']);
+        add_action('admin_enqueue_scripts', [self::class, 'enqueueAdminAssets']);
+        add_action('post_submitbox_misc_actions', [self::class, 'renderPostEditScreenActions']);
         add_filter('the_title', [self::class, 'filterSingularTitle'], 99, 2);
         add_filter('get_the_archive_title', [self::class, 'filterArchiveTitle'], 99);
 
@@ -40,11 +42,11 @@ final class Admin_Frontend_Edit_Link
 
     public static function addAdminBarEditLink(\WP_Admin_Bar $adminBar): void
     {
-        if (! self::adminBarEnabled() || ! is_admin_bar_showing() || ! self::shouldOfferButton()) {
+        if (! self::adminBarEnabled() || ! is_admin_bar_showing()) {
             return;
         }
 
-        $context = self::resolveContext();
+        $context = self::resolveAdminBarContext();
         if ($context === null) {
             return;
         }
@@ -65,8 +67,69 @@ final class Admin_Frontend_Edit_Link
                 'target' => '_blank',
                 'rel' => 'noopener noreferrer',
                 'title' => esc_attr__('Mở nội dung trong trình biên tập Laravel', 'omi-seo-ai-bridge'),
+                'class' => 'omi-seo-ai-edit-on-laravel-parent',
             ],
         ]);
+
+        $devUrl = self::buildLaravelRedirectUrl($context['wp_id'], $context['type'], 'dev');
+        if ($devUrl !== '' && $devUrl !== $url) {
+            $adminBar->add_node([
+                'id' => 'omi-seo-ai-edit-on-laravel-dev',
+                'parent' => 'omi-seo-ai-edit-on-laravel',
+                'title' => esc_html__('LARAVEL API URL (Dev)', 'omi-seo-ai-bridge'),
+                'href' => $devUrl,
+                'meta' => [
+                    'target' => '_blank',
+                    'rel' => 'noopener noreferrer',
+                    'title' => esc_attr__('Mở editor Laravel qua URL Dev (localhost)', 'omi-seo-ai-bridge'),
+                ],
+            ]);
+        }
+    }
+
+    public static function renderPostEditScreenActions(): void
+    {
+        global $post;
+
+        if (! $post instanceof \WP_Post || ! self::canEditPostInAdmin($post)) {
+            return;
+        }
+
+        $type = self::resolveSingularType((string) $post->post_type);
+        $url = self::buildLaravelRedirectUrl((int) $post->ID, $type);
+        if ($url === '') {
+            return;
+        }
+
+        $devUrl = self::buildLaravelRedirectUrl((int) $post->ID, $type, 'dev');
+        $hasDev = $devUrl !== '' && $devUrl !== $url;
+
+        echo '<div class="omi-admin-edit-post-box misc-pub-section">';
+        echo '<span class="dashicons dashicons-edit" style="margin-right:4px;color:#2271b1;" aria-hidden="true"></span>';
+        echo '<strong>' . esc_html__('TVH SEO AI', 'omi-seo-ai-bridge') . '</strong>';
+        echo '<div class="omi-admin-edit-post-box__links">';
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in renderAdminEditLink()
+        echo self::renderAdminEditLink($url, __('Sửa trên Laravel', 'omi-seo-ai-bridge'), 'omi-admin-edit-post-box__link');
+        if ($hasDev) {
+            echo ' <span class="omi-admin-edit-post-box__sep">|</span> ';
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+            echo self::renderAdminEditLink($devUrl, __('LARAVEL API URL (Dev)', 'omi-seo-ai-bridge'), 'omi-admin-edit-post-box__link omi-admin-edit-post-box__link--dev');
+        }
+        echo '</div></div>';
+    }
+
+    public static function enqueueAdminAssets(string $hookSuffix): void
+    {
+        if (! in_array($hookSuffix, ['post.php', 'post-new.php'], true)) {
+            return;
+        }
+
+        wp_enqueue_style(
+            'omi-seo-ai-admin-edit-link',
+            OMI_SEO_AI_BRIDGE_URL . 'assets/css/admin-frontend-edit-link.css',
+            [],
+            OMI_SEO_AI_BRIDGE_VERSION
+        );
     }
 
     public static function enqueueAssets(): void
@@ -378,7 +441,7 @@ final class Admin_Frontend_Edit_Link
             return '';
         }
 
-        return self::renderButton($url, self::buttonLabel($context['type']));
+        return self::renderButton($url, self::buttonLabel($context['type']), $context);
     }
 
     /**
@@ -431,8 +494,12 @@ final class Admin_Frontend_Edit_Link
         return 'category';
     }
 
-    private static function laravelAppBaseUrl(): string
+    private static function laravelAppBaseUrl(?string $mode = null): string
     {
+        if (function_exists('omi_seo_ai_bridge_laravel_app_base_url')) {
+            return omi_seo_ai_bridge_laravel_app_base_url($mode);
+        }
+
         if (! function_exists('omi_seo_ai_bridge_laravel_api_url')) {
             return '';
         }
@@ -449,13 +516,34 @@ final class Admin_Frontend_Edit_Link
         return $base;
     }
 
-    private static function buildLaravelRedirectUrl(int $wpId, string $type): string
+    private static function connectionHash(): string
     {
-        if ($wpId <= 0 || ! function_exists('omi_seo_ai_bridge_laravel_api_url')) {
+        if (function_exists('omi_seo_ai_bridge_maybe_refresh_connection_hash')) {
+            omi_seo_ai_bridge_maybe_refresh_connection_hash(false);
+        }
+
+        return function_exists('omi_seo_ai_bridge_connection_hash')
+            ? omi_seo_ai_bridge_connection_hash()
+            : '';
+    }
+
+    private static function wpEditRedirectPath(): string
+    {
+        $hash = self::connectionHash();
+        if ($hash !== '') {
+            return '/seo/' . $hash . '/articles/wp-edit-redirect';
+        }
+
+        return '/seo/articles/wp-edit-redirect';
+    }
+
+    private static function buildLaravelRedirectUrl(int $wpId, string $type, ?string $urlMode = null): string
+    {
+        if ($wpId <= 0) {
             return '';
         }
 
-        $base = self::laravelAppBaseUrl();
+        $base = self::laravelAppBaseUrl($urlMode);
         if ($base === '') {
             return '';
         }
@@ -466,7 +554,7 @@ final class Admin_Frontend_Edit_Link
                 'type' => $type,
                 'site_url' => home_url('/'),
             ],
-            $base . '/seo/articles/wp-edit-redirect'
+            $base . self::wpEditRedirectPath()
         );
     }
 
@@ -483,12 +571,88 @@ final class Admin_Frontend_Edit_Link
         return __('Sửa bài viết', 'omi-seo-ai-bridge');
     }
 
-    private static function renderButton(string $url, string $label): string
+    /**
+     * @param  array{wp_id: int, type: string}|null  $context
+     */
+    private static function renderButton(string $url, string $label, ?array $context = null): string
+    {
+        $context = $context ?? [];
+        $wpId = (int) ($context['wp_id'] ?? 0);
+        $type = (string) ($context['type'] ?? 'article');
+        $devUrl = $wpId > 0 ? self::buildLaravelRedirectUrl($wpId, $type, 'dev') : '';
+        $hasDev = $devUrl !== '' && $devUrl !== $url;
+
+        if (! $hasDev) {
+            return sprintf(
+                '<p class="omi-admin-edit-below-title"><a class="omi-admin-edit-below-title__link" href="%s" target="_blank" rel="noopener noreferrer">%s</a></p>',
+                esc_url($url),
+                esc_html($label)
+            );
+        }
+
+        return sprintf(
+            '<div class="omi-admin-edit-below-title omi-admin-edit-below-title--dropdown">'
+            . '<a class="omi-admin-edit-below-title__link" href="%1$s" target="_blank" rel="noopener noreferrer">%2$s</a>'
+            . '<div class="omi-admin-edit-below-title__menu" role="menu">'
+            . '<a class="omi-admin-edit-below-title__menu-item" href="%1$s" target="_blank" rel="noopener noreferrer" role="menuitem">%3$s</a>'
+            . '<a class="omi-admin-edit-below-title__menu-item omi-admin-edit-below-title__menu-item--dev" href="%4$s" target="_blank" rel="noopener noreferrer" role="menuitem">%5$s</a>'
+            . '</div></div>',
+            esc_url($url),
+            esc_html($label),
+            esc_html__('Production', 'omi-seo-ai-bridge'),
+            esc_url($devUrl),
+            esc_html__('LARAVEL API URL (Dev)', 'omi-seo-ai-bridge')
+        );
+    }
+
+    private static function renderAdminEditLink(string $url, string $label, string $class = ''): string
     {
         return sprintf(
-            '<p class="omi-admin-edit-below-title"><a class="omi-admin-edit-below-title__link" href="%s" target="_blank" rel="noopener noreferrer">%s</a></p>',
+            '<a href="%s" class="%s" target="_blank" rel="noopener noreferrer">%s</a>',
             esc_url($url),
+            esc_attr($class),
             esc_html($label)
         );
+    }
+
+    /**
+     * @return array{wp_id: int, type: string}|null
+     */
+    private static function resolveAdminBarContext(): ?array
+    {
+        if (is_admin()) {
+            global $post;
+            if ($post instanceof \WP_Post && self::canEditPostInAdmin($post)) {
+                return [
+                    'wp_id' => (int) $post->ID,
+                    'type' => self::resolveSingularType((string) $post->post_type),
+                ];
+            }
+
+            return null;
+        }
+
+        if (! self::shouldOfferButton()) {
+            return null;
+        }
+
+        return self::resolveContext();
+    }
+
+    private static function canEditPostInAdmin(\WP_Post $post): bool
+    {
+        if (! is_user_logged_in() || ! in_array($post->post_type, ['post', 'page', 'product'], true)) {
+            return false;
+        }
+
+        if (! current_user_can('edit_post', (int) $post->ID)) {
+            return false;
+        }
+
+        if (self::laravelAppBaseUrl() === '') {
+            return false;
+        }
+
+        return function_exists('omi_seo_ai_bridge_is_connected') && omi_seo_ai_bridge_is_connected();
     }
 }

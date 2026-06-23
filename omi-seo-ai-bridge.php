@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.43
+ * Version:           1.0.45
  * Author:            TVH
  */
 
@@ -12,12 +12,13 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.43');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.45');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL', 'omi_seo_laravel_api_url');
 define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL_DEV', 'omi_seo_laravel_api_url_dev');
 define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL_PRODUCTION', 'omi_seo_laravel_api_url_production');
+define('OMI_SEO_AI_BRIDGE_OPTION_CONNECTION_HASH', 'omi_seo_connection_hash');
 define('OMI_SEO_AI_BRIDGE_PATH', plugin_dir_path(__FILE__));
 define('OMI_SEO_AI_BRIDGE_URL', plugin_dir_url(__FILE__));
 define('OMI_SEO_AI_BRIDGE_BASENAME', plugin_basename(__FILE__));
@@ -37,6 +38,7 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-debug.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-controller.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-laravel-push-sync.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-faq-shortcode.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rank-math-faq-schema.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-admin-frontend-edit-link.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-redirection-manager.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-revision-manager.php';
@@ -55,6 +57,7 @@ add_action('rest_api_init', static function (): void {
 add_action('init', static function (): void {
     \OmiSeoAiBridge\Laravel_Push_Sync::register();
     \OmiSeoAiBridge\Faq_Shortcode::register();
+    \OmiSeoAiBridge\Rank_Math_Faq_Schema::register();
     \OmiSeoAiBridge\Virtual_Comments::register();
     \OmiSeoAiBridge\Admin_Frontend_Edit_Link::register();
     \OmiSeoAiBridge\Redirection_Manager::register();
@@ -389,6 +392,78 @@ function omi_seo_ai_bridge_laravel_api_url(): string
     }
 
     return $productionUrl !== '' ? $productionUrl : $devUrl;
+}
+
+/**
+ * Mã workspace SEO (connection_hash) lưu sau khi ping Laravel thành công.
+ */
+function omi_seo_ai_bridge_connection_hash(): string
+{
+    $hash = trim((string) get_option(OMI_SEO_AI_BRIDGE_OPTION_CONNECTION_HASH, ''));
+
+    return preg_match('/^[a-zA-Z0-9]{32,64}$/', $hash) ? $hash : '';
+}
+
+/**
+ * @param  non-empty-string  $hash
+ */
+function omi_seo_ai_bridge_save_connection_hash(string $hash): void
+{
+    if (! preg_match('/^[a-zA-Z0-9]{32,64}$/', $hash)) {
+        return;
+    }
+
+    update_option(OMI_SEO_AI_BRIDGE_OPTION_CONNECTION_HASH, $hash, false);
+}
+
+/**
+ * URL gốc ứng dụng Laravel (bỏ /api) theo mode: null = active, dev, production.
+ */
+function omi_seo_ai_bridge_laravel_app_base_url(?string $mode = null): string
+{
+    $apiUrl = match ($mode) {
+        'dev' => omi_seo_ai_bridge_laravel_api_url_dev(),
+        'production' => omi_seo_ai_bridge_laravel_api_url_production(),
+        default => omi_seo_ai_bridge_laravel_api_url(),
+    };
+
+    $base = rtrim(trim($apiUrl), '/');
+    if ($base === '') {
+        return '';
+    }
+
+    if (str_ends_with(strtolower($base), '/api')) {
+        $base = substr($base, 0, -4);
+    }
+
+    return $base;
+}
+
+/**
+ * Gọi ping Laravel để lấy connection_hash (cache 1 giờ nếu đã có).
+ */
+function omi_seo_ai_bridge_maybe_refresh_connection_hash(bool $force = false): bool
+{
+    if (! $force && omi_seo_ai_bridge_connection_hash() !== '') {
+        return true;
+    }
+
+    if (! $force) {
+        $lastAttempt = (int) get_transient('omi_seo_connection_hash_refresh');
+        if ($lastAttempt > 0 && (time() - $lastAttempt) < HOUR_IN_SECONDS) {
+            return omi_seo_ai_bridge_connection_hash() !== '';
+        }
+    }
+
+    set_transient('omi_seo_connection_hash_refresh', time(), HOUR_IN_SECONDS);
+
+    if (! class_exists(\OmiSeoAiBridge\Laravel_Push_Sync::class)) {
+        return false;
+    }
+
+    $result = \OmiSeoAiBridge\Laravel_Push_Sync::test_laravel_connection();
+
+    return ($result['success'] ?? false) && omi_seo_ai_bridge_connection_hash() !== '';
 }
 
 /**
