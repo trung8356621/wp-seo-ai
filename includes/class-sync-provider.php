@@ -47,6 +47,13 @@ final class Sync_Provider
         return [
             'counts'  => $counts,
             'entries' => $entries,
+            'totals'  => [
+                'entries'        => count($entries),
+                'wp_admin_posts' => $this->count_wp_admin_posts('post'),
+                'wp_admin_pages' => $this->count_wp_admin_posts('page'),
+                'manifest_posts' => (int) ($counts['article'] ?? 0),
+                'manifest_pages' => (int) ($counts['page'] ?? 0),
+            ],
         ];
     }
 
@@ -551,5 +558,24 @@ final class Sync_Provider
         }
 
         return $url;
+    }
+
+    private function count_wp_admin_posts(string $postType): int
+    {
+        if (! post_type_exists($postType)) {
+            return 0;
+        }
+
+        $counts = wp_count_posts($postType);
+        if (! is_object($counts)) {
+            return 0;
+        }
+
+        $total = 0;
+        foreach (['publish', 'draft', 'pending', 'future', 'private'] as $status) {
+            $total += (int) ($counts->$status ?? 0);
+        }
+
+        return $total;
     }
 }

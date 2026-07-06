@@ -1556,6 +1556,7 @@ final class Rest_Controller
             'message' => 'Sync manifest generated.',
             'counts'  => $payload['counts'],
             'entries' => $payload['entries'],
+            'totals'  => $payload['totals'] ?? [],
         ], 200);
     }
 

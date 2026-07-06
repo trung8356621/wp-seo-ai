@@ -37,7 +37,9 @@ final class Polylang_Sync
 
         $default = 'vi';
         if (function_exists('pll_default_language')) {
-            $resolved = trim((string) pll_default_language('slug'));
+            $resolved = self::normalize_language_slug(
+                trim((string) pll_default_language('slug')),
+            );
             if ($resolved !== '') {
                 $default = $resolved;
             }
@@ -50,12 +52,14 @@ final class Polylang_Sync
             $locales = pll_languages_list(['fields' => 'locale']);
 
             if (is_array($slugs)) {
+                $seenSlugs = [];
                 foreach ($slugs as $index => $slug) {
-                    $slug = trim((string) $slug);
-                    if ($slug === '') {
+                    $slug = self::normalize_language_slug(trim((string) $slug));
+                    if ($slug === '' || isset($seenSlugs[$slug])) {
                         continue;
                     }
 
+                    $seenSlugs[$slug] = true;
                     $languages[] = [
                         'slug'   => $slug,
                         'name'   => trim((string) ($names[$index] ?? $slug)),
@@ -95,7 +99,9 @@ final class Polylang_Sync
             return null;
         }
 
-        $currentLang = trim((string) pll_get_post_language($postId, 'slug'));
+        $currentLang = self::normalize_language_slug(
+            trim((string) pll_get_post_language($postId, 'slug')),
+        );
         if ($currentLang === '') {
             return null;
         }
@@ -117,7 +123,9 @@ final class Polylang_Sync
             return null;
         }
 
-        $currentLang = trim((string) pll_get_term_language($termId, 'slug'));
+        $currentLang = self::normalize_language_slug(
+            trim((string) pll_get_term_language($termId, 'slug')),
+        );
         if ($currentLang === '') {
             return null;
         }
@@ -178,7 +186,7 @@ final class Polylang_Sync
 
         $normalized = [];
         foreach ($raw as $lang => $entityId) {
-            $lang = trim((string) $lang);
+            $lang = self::normalize_language_slug(trim((string) $lang));
             $entityId = (int) $entityId;
             if ($lang === '' || $entityId <= 0) {
                 continue;
@@ -188,5 +196,25 @@ final class Polylang_Sync
         }
 
         return $normalized;
+    }
+
+    /**
+     * Chuẩn hóa slug Polylang về mã ISO 639-1 canonical để Laravel filter/match đúng.
+     * Polylang hay cấu hình sai: slug `vn`, locale `vi_VI`/`vi_VN`/`vi` — đều là tiếng Việt.
+     */
+    public static function normalize_language_slug(string $slug): string
+    {
+        $slug = trim($slug);
+        if ($slug === '') {
+            return '';
+        }
+
+        $key = strtolower(str_replace('-', '_', $slug));
+
+        if ($key === 'vn' || $key === 'vi' || str_starts_with($key, 'vi_')) {
+            return 'vi';
+        }
+
+        return strtolower($slug);
     }
 }
