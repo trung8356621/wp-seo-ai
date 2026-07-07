@@ -49,18 +49,45 @@ final class Attachment_Binary_Replacer
             ];
         }
 
-        if (! @copy($tempFilePath, $target)) {
-            return [
-                'success' => false,
-                'message' => 'Không ghi đè được file ảnh trên WordPress.',
-            ];
-        }
+        $normalizedMime = strtolower(trim($mimeType));
+        $targetExtension = strtolower((string) pathinfo($target, PATHINFO_EXTENSION));
+        $shouldRenameToWebp = $normalizedMime === 'image/webp' && $targetExtension !== 'webp';
 
-        if ($mimeType !== '') {
+        if ($shouldRenameToWebp) {
+            $newTarget = $dir . DIRECTORY_SEPARATOR . pathinfo($target, PATHINFO_FILENAME) . '.webp';
+            if (! @copy($tempFilePath, $newTarget)) {
+                return [
+                    'success' => false,
+                    'message' => 'Không ghi được file WebP mới trên WordPress.',
+                ];
+            }
+
+            $this->deleteAttachmentFiles($attachmentId, $target);
+
+            if (! function_exists('update_attached_file')) {
+                require_once ABSPATH . 'wp-admin/includes/post.php';
+            }
+
+            update_attached_file($attachmentId, $newTarget);
             wp_update_post([
                 'ID' => $attachmentId,
-                'post_mime_type' => $mimeType,
+                'post_mime_type' => 'image/webp',
             ]);
+            $target = $newTarget;
+        } else {
+            if (! @copy($tempFilePath, $target)) {
+                return [
+                    'success' => false,
+                    'message' => 'Không ghi đè được file ảnh trên WordPress.',
+                ];
+            }
+
+            if ($normalizedMime !== '') {
+                wp_update_post([
+                    'ID' => $attachmentId,
+                    'post_mime_type' => $normalizedMime,
+                ]);
+            }
         }
 
         require_once ABSPATH . 'wp-admin/includes/image.php';
@@ -78,5 +105,27 @@ final class Attachment_Binary_Replacer
             'url' => (string) wp_get_attachment_url($attachmentId),
             'message' => 'Đã cập nhật file ảnh trên WordPress.',
         ];
+    }
+
+    private function deleteAttachmentFiles(int $attachmentId, string $mainFilePath): void
+    {
+        $metadata = wp_get_attachment_metadata($attachmentId);
+        if (is_array($metadata) && ! empty($metadata['sizes']) && is_array($metadata['sizes'])) {
+            $uploadDir = dirname($mainFilePath);
+            foreach ($metadata['sizes'] as $size) {
+                if (! is_array($size) || empty($size['file'])) {
+                    continue;
+                }
+
+                $thumbPath = $uploadDir . DIRECTORY_SEPARATOR . (string) $size['file'];
+                if (is_file($thumbPath)) {
+                    @unlink($thumbPath);
+                }
+            }
+        }
+
+        if (is_file($mainFilePath)) {
+            @unlink($mainFilePath);
+        }
     }
 }

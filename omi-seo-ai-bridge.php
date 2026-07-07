@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.47
+ * Version:           1.0.50
  * Author:            TVH
  */
 
@@ -12,7 +12,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.47');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.50');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL', 'omi_seo_laravel_api_url');
@@ -42,6 +42,8 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rank-math-faq-schema.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-admin-frontend-edit-link.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-redirection-manager.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-revision-manager.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-wp-cron-disabler.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-missed-schedule-fixer.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-plugin-updater.php';
 
 add_action('plugins_loaded', static function (): void {
@@ -62,6 +64,8 @@ add_action('init', static function (): void {
     \OmiSeoAiBridge\Admin_Frontend_Edit_Link::register();
     \OmiSeoAiBridge\Redirection_Manager::register();
     \OmiSeoAiBridge\Revision_Manager::register();
+    \OmiSeoAiBridge\Wp_Cron_Disabler::register();
+    \OmiSeoAiBridge\Missed_Schedule_Fixer::register();
 });
 
 add_action('admin_menu', static function (): void {

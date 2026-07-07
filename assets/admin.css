@@ -295,3 +295,20 @@
         grid-template-columns: 1fr;
     }
 }
+
+.omi-seo-ai-missed-schedule-card {
+    margin-top: 16px;
+}
+
+.omi-seo-ai-missed-schedule-actions {
+    margin: 0 0 14px;
+}
+
+.omi-seo-ai-missed-status {
+    color: #b32d2e;
+    font-weight: 600;
+}
+
+.omi-seo-ai-missed-schedule-table {
+    margin-top: 8px;
+}

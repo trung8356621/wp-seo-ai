@@ -981,6 +981,11 @@ final class Rest_Controller
             $postData['post_name'] = $requestedSlug;
         }
 
+        $initialContent = $body['post_content'] ?? null;
+        if (is_string($initialContent) && $initialContent !== '') {
+            $postData['post_content'] = $initialContent;
+        }
+
         Laravel_Push_Sync::suppress(true);
         try {
             $postId = wp_insert_post($postData, true);
@@ -996,16 +1001,120 @@ final class Rest_Controller
         }
 
         $postId = (int) $postId;
+        $createdPost = get_post($postId);
+        $faqCount = 0;
+        $seoApplied = false;
+
+        if ($createdPost instanceof \WP_Post) {
+            $supplementary = self::apply_supplementary_sync_fields($postId, $body, $createdPost);
+            if ($supplementary instanceof WP_REST_Response) {
+                return $supplementary;
+            }
+            $faqCount = (int) ($supplementary['faq_count'] ?? 0);
+            $seoApplied = (bool) ($supplementary['seo_applied'] ?? false);
+        }
+
+        $message = 'Đã tạo bài viết mới trên WordPress.';
+        if ($faqCount > 0) {
+            $message .= sprintf(' Đã gắn %d FAQ.', $faqCount);
+        }
+        if ($seoApplied) {
+            $message .= ' Đã áp SEO meta.';
+        }
 
         return new WP_REST_Response([
             'success' => true,
-            'message' => 'Đã tạo bài viết mới trên WordPress.',
+            'message' => $message,
             'wp_post_id' => $postId,
             'slug' => (string) get_post_field('post_name', $postId),
             'permalink' => Permalink_Resolver::for_post($postId),
             'post_date' => (string) get_post_field('post_date', $postId),
             'post_modified' => (string) get_post_field('post_modified', $postId),
+            'faq_count' => $faqCount,
+            'seo_applied' => $seoApplied,
         ], 201);
+    }
+
+    /**
+     * FAQ, SEO meta và category sau khi post đã tồn tại (create hoặc editor-sync).
+     *
+     * @return array{faq_count: int, seo_applied: bool, category_count: int}|WP_REST_Response
+     */
+    private static function apply_supplementary_sync_fields(int $postId, array $body, \WP_Post $post)
+    {
+        $update = ['ID' => $postId];
+        $changed = false;
+        $faqCount = 0;
+
+        $faqs = $body['faqs'] ?? [];
+        if (is_array($faqs)) {
+            $normalized = Faq_Shortcode::normalize_faq_payload($faqs);
+            Faq_Shortcode::store_faqs($postId, $normalized);
+            $faqCount = count($normalized);
+
+            if (
+                $normalized !== []
+                && ! has_shortcode((string) $post->post_content, 'omi_faq')
+                && ! isset($update['post_content'])
+            ) {
+                $update['post_content'] = rtrim((string) $post->post_content) . "\n\n[omi_faq]";
+                $changed = true;
+            }
+        }
+
+        if ($changed) {
+            try {
+                update_post_meta($postId, '_omi_seo_ai_skip_push', '1');
+                $result = wp_update_post($update, true);
+                delete_post_meta($postId, '_omi_seo_ai_skip_push');
+
+                if (is_wp_error($result)) {
+                    return new WP_REST_Response([
+                        'success' => false,
+                        'message' => $result->get_error_message(),
+                    ], 422);
+                }
+            } catch (\Throwable $exception) {
+                delete_post_meta($postId, '_omi_seo_ai_skip_push');
+
+                return Rest_Debug::error_response(
+                    'wp_update_post failed while applying supplementary sync fields.',
+                    $exception,
+                    422,
+                );
+            }
+        }
+
+        $seoApplied = false;
+        if (isset($body['seo']) && is_array($body['seo'])) {
+            try {
+                $seoApplied = Seo_Plugin_Resolver::apply_to_post($postId, $body['seo']);
+            } catch (\Throwable) {
+                $seoApplied = false;
+            }
+        }
+
+        $categoryCount = 0;
+        if (isset($body['category_ids']) && is_array($body['category_ids'])) {
+            $taxonomy = (string) $post->post_type === 'product' ? 'product_cat' : 'category';
+            $termIds = array_values(array_unique(array_filter(
+                array_map('intval', $body['category_ids']),
+                static fn (int $id): bool => $id > 0,
+            )));
+
+            if ($termIds !== [] && taxonomy_exists($taxonomy)) {
+                $result = wp_set_object_terms($postId, $termIds, $taxonomy, false);
+                if (! is_wp_error($result)) {
+                    $categoryCount = count($termIds);
+                }
+            }
+        }
+
+        return [
+            'faq_count' => $faqCount,
+            'seo_applied' => $seoApplied,
+            'category_count' => $categoryCount,
+        ];
     }
 
     public static function handle_save_virtual_comments(WP_REST_Request $request): WP_REST_Response
