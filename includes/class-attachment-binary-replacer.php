@@ -9,7 +9,8 @@ if (! defined('ABSPATH')) {
 }
 
 /**
- * Ghi đè file ảnh attachment (giữ ID, slug, URL) — không lưu backup trên WordPress.
+ * Ghi đè file ảnh attachment (giữ ID, slug) — đồng bộ extension với mime.
+ * Tránh ghi JPEG vào path .webp (browser ảnh trắng/vỡ).
  */
 final class Attachment_Binary_Replacer
 {
@@ -50,28 +51,32 @@ final class Attachment_Binary_Replacer
         }
 
         $normalizedMime = strtolower(trim($mimeType));
-        $targetExtension = strtolower((string) pathinfo($target, PATHINFO_EXTENSION));
-        $shouldRenameToWebp = $normalizedMime === 'image/webp' && $targetExtension !== 'webp';
+        if ($normalizedMime === '') {
+            $normalizedMime = $this->detectMimeFromFile($tempFilePath);
+        }
 
-        if ($shouldRenameToWebp) {
-            $newTarget = $dir . DIRECTORY_SEPARATOR . pathinfo($target, PATHINFO_FILENAME) . '.webp';
+        $targetExtension = strtolower((string) pathinfo($target, PATHINFO_EXTENSION));
+        $desiredExtension = $this->extensionForMime($normalizedMime);
+
+        if ($desiredExtension !== '' && $desiredExtension !== $targetExtension) {
+            $newTarget = $dir.DIRECTORY_SEPARATOR.pathinfo($target, PATHINFO_FILENAME).'.'.$desiredExtension;
             if (! @copy($tempFilePath, $newTarget)) {
                 return [
                     'success' => false,
-                    'message' => 'Không ghi được file WebP mới trên WordPress.',
+                    'message' => 'Không ghi được file ảnh mới trên WordPress.',
                 ];
             }
 
             $this->deleteAttachmentFiles($attachmentId, $target);
 
             if (! function_exists('update_attached_file')) {
-                require_once ABSPATH . 'wp-admin/includes/post.php';
+                require_once ABSPATH.'wp-admin/includes/post.php';
             }
 
             update_attached_file($attachmentId, $newTarget);
             wp_update_post([
                 'ID' => $attachmentId,
-                'post_mime_type' => 'image/webp',
+                'post_mime_type' => $normalizedMime !== '' ? $normalizedMime : $this->mimeForExtension($desiredExtension),
             ]);
             $target = $newTarget;
         } else {
@@ -90,7 +95,7 @@ final class Attachment_Binary_Replacer
             }
         }
 
-        require_once ABSPATH . 'wp-admin/includes/image.php';
+        require_once ABSPATH.'wp-admin/includes/image.php';
 
         $metadata = wp_generate_attachment_metadata($attachmentId, $target);
         if (is_array($metadata)) {
@@ -107,6 +112,39 @@ final class Attachment_Binary_Replacer
         ];
     }
 
+    private function extensionForMime(string $mime): string
+    {
+        return match ($mime) {
+            'image/webp' => 'webp',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/jpeg', 'image/jpg' => 'jpg',
+            default => '',
+        };
+    }
+
+    private function mimeForExtension(string $extension): string
+    {
+        return match (strtolower($extension)) {
+            'webp' => 'image/webp',
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+            default => 'image/jpeg',
+        };
+    }
+
+    private function detectMimeFromFile(string $tempFilePath): string
+    {
+        $info = @getimagesize($tempFilePath);
+        if (is_array($info) && isset($info['mime']) && is_string($info['mime'])) {
+            return strtolower($info['mime']);
+        }
+
+        $extension = strtolower((string) pathinfo($tempFilePath, PATHINFO_EXTENSION));
+
+        return $this->mimeForExtension($extension);
+    }
+
     private function deleteAttachmentFiles(int $attachmentId, string $mainFilePath): void
     {
         $metadata = wp_get_attachment_metadata($attachmentId);
@@ -117,7 +155,7 @@ final class Attachment_Binary_Replacer
                     continue;
                 }
 
-                $thumbPath = $uploadDir . DIRECTORY_SEPARATOR . (string) $size['file'];
+                $thumbPath = $uploadDir.DIRECTORY_SEPARATOR.(string) $size['file'];
                 if (is_file($thumbPath)) {
                     @unlink($thumbPath);
                 }

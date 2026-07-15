@@ -50,26 +50,28 @@ final class Attachment_Renamer
      */
     private function rename_one(array $item): array
     {
-        $attachmentId = (int) ($item['attachment_id'] ?? 0);
+        $requestedAttachmentId = (int) ($item['attachment_id'] ?? 0);
         $newSlug = $this->sanitize_slug((string) ($item['new_slug'] ?? ''));
+        $oldUrl = trim((string) ($item['old_url'] ?? ''));
 
-        if ($attachmentId <= 0 || $newSlug === '') {
+        if ($newSlug === '') {
             return [
                 'success' => false,
                 'message' => 'Thiếu attachment_id hoặc new_slug.',
             ];
         }
 
-        $attachment = get_post($attachmentId);
+        // ID stale (ảnh sync/reimport đổi ID) — resolve lại theo old_url / basename file.
+        $attachmentId = $this->resolve_attachment_id($requestedAttachmentId, $oldUrl);
+        $attachment = $attachmentId > 0 ? get_post($attachmentId) : null;
         if (! $attachment instanceof \WP_Post || $attachment->post_type !== 'attachment') {
             return [
                 'success'       => false,
-                'attachment_id' => $attachmentId,
+                'attachment_id' => $requestedAttachmentId > 0 ? $requestedAttachmentId : $attachmentId,
                 'message'       => 'Attachment không tồn tại.',
             ];
         }
 
-        $oldUrl = trim((string) ($item['old_url'] ?? ''));
         if ($oldUrl === '') {
             $oldUrl = (string) wp_get_attachment_url($attachmentId);
         }
@@ -217,6 +219,62 @@ final class Attachment_Renamer
             'variant_regenerated_count' => count((array) ($regeneratedMetadata['sizes'] ?? [])),
             'posts_updated' => $postsUpdated,
         ];
+    }
+
+    /**
+     * ID gửi lên có thể stale sau reimport/sync — ưu tiên ID còn sống, không thì tìm theo URL/basename.
+     */
+    private function resolve_attachment_id(int $requestedId, string $oldUrl): int
+    {
+        if ($requestedId > 0) {
+            $attachment = get_post($requestedId);
+            if ($attachment instanceof \WP_Post && $attachment->post_type === 'attachment') {
+                return $requestedId;
+            }
+        }
+
+        $cleanUrl = preg_replace('/[?#].*$/', '', trim($oldUrl));
+        if (! is_string($cleanUrl) || $cleanUrl === '') {
+            return 0;
+        }
+
+        $resolved = (int) attachment_url_to_postid($cleanUrl);
+        if ($resolved > 0) {
+            return $resolved;
+        }
+
+        $fullUrl = preg_replace('/-\d+x\d+(?=\.(jpe?g|png|gif|webp)$)/i', '', $cleanUrl);
+        if (is_string($fullUrl) && $fullUrl !== '' && $fullUrl !== $cleanUrl) {
+            $resolved = (int) attachment_url_to_postid($fullUrl);
+            if ($resolved > 0) {
+                return $resolved;
+            }
+        }
+
+        $path = parse_url($cleanUrl, PHP_URL_PATH);
+        $basename = is_string($path) ? wp_basename($path) : '';
+        if ($basename === '') {
+            return 0;
+        }
+
+        global $wpdb;
+        $like = '%' . $wpdb->esc_like($basename);
+        $found = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT post_id FROM {$wpdb->postmeta}
+             WHERE meta_key = '_wp_attached_file' AND meta_value LIKE %s
+             ORDER BY post_id DESC LIMIT 1",
+            $like
+        ));
+
+        if ($found <= 0) {
+            return 0;
+        }
+
+        $attachment = get_post($found);
+
+        return ($attachment instanceof \WP_Post && $attachment->post_type === 'attachment')
+            ? $found
+            : 0;
     }
 
     private function sanitize_slug(string $slug): string

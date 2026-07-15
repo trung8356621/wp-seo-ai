@@ -1297,7 +1297,49 @@ final class Rest_Controller
         }
 
         $postType = (string) $post->post_type;
-        $commentType = $postType === 'product' ? 'review' : 'comment';
+        $isProduct = $postType === 'product';
+        $items = self::collect_comment_review_items_for_post($postId, $isProduct);
+
+        return new WP_REST_Response([
+            'success' => true,
+            'wp_post_id' => $postId,
+            'wp_post_type' => $postType,
+            'count' => count($items),
+            'items' => array_values($items),
+        ], 200);
+    }
+
+    /**
+     * Virtual comments live in post meta; real reviews may exist in wp_comments.
+     *
+     * @return list<array{author: string, content: string, date: string, rating?: int, virtual?: bool}>
+     */
+    private static function collect_comment_review_items_for_post(int $postId, bool $isProduct): array
+    {
+        $items = [];
+        $seen = [];
+
+        foreach (Virtual_Comments::get_virtual_items($postId) as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $formatted = self::format_comment_review_row($row, $isProduct);
+            if ($formatted === null) {
+                continue;
+            }
+
+            $formatted['virtual'] = true;
+            $key = self::comment_review_dedupe_key($formatted);
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $items[] = $formatted;
+        }
+
+        $commentType = $isProduct ? 'review' : 'comment';
         $comments = get_comments([
             'post_id' => $postId,
             'status' => 'approve',
@@ -1307,7 +1349,6 @@ final class Rest_Controller
             'number' => 0,
         ]);
 
-        $items = [];
         foreach ($comments as $comment) {
             if (! $comment instanceof \WP_Comment) {
                 continue;
@@ -1324,23 +1365,64 @@ final class Rest_Controller
                 'date' => (string) ($comment->comment_date ?: current_time('mysql')),
             ];
 
-            if ($postType === 'product') {
+            if ($isProduct) {
                 $rating = (int) get_comment_meta((int) $comment->comment_ID, 'rating', true);
                 if ($rating > 0) {
                     $row['rating'] = max(1, min(5, $rating));
                 }
             }
 
+            $key = self::comment_review_dedupe_key($row);
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
             $items[] = $row;
         }
 
-        return new WP_REST_Response([
-            'success' => true,
-            'wp_post_id' => $postId,
-            'wp_post_type' => $postType,
-            'count' => count($items),
-            'items' => array_values($items),
-        ], 200);
+        return $items;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array{author: string, content: string, date: string, rating?: int}|null
+     */
+    private static function format_comment_review_row(array $row, bool $isProduct): ?array
+    {
+        $content = trim((string) ($row['content'] ?? $row['comment'] ?? ''));
+        if ($content === '') {
+            return null;
+        }
+
+        $formatted = [
+            'author' => sanitize_text_field((string) ($row['author'] ?? $row['author_name'] ?? 'Khách mua hàng')),
+            'content' => $content,
+            'date' => trim((string) ($row['date'] ?? '')) !== ''
+                ? (string) $row['date']
+                : current_time('mysql'),
+        ];
+
+        if ($isProduct) {
+            foreach (['rating', 'star_ranking', 'stars', 'star'] as $key) {
+                if (isset($row[$key]) && is_numeric($row[$key])) {
+                    $formatted['rating'] = max(1, min(5, (int) $row[$key]));
+                    break;
+                }
+            }
+        }
+
+        return $formatted;
+    }
+
+    /**
+     * @param  array{author?: string, content?: string}  $row
+     */
+    private static function comment_review_dedupe_key(array $row): string
+    {
+        return mb_strtolower(trim((string) ($row['author'] ?? '')))
+            . "\0"
+            . mb_strtolower(trim((string) ($row['content'] ?? '')));
     }
 
     public static function handle_term_editor_sync(WP_REST_Request $request): WP_REST_Response

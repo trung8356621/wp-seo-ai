@@ -23,10 +23,20 @@ final class Laravel_Push_Sync
     /** @var array<string, true> */
     private static $queuedTermKeys = [];
 
+    /**
+     * Lifecycle sync: trash / force_delete / restore.
+     *
+     * @var array<int, array{action:string,type:string,wp_post_type:string}>
+     */
+    private static $queuedLifecycle = [];
+
     public static function register(): void
     {
         add_action('save_post', [self::class, 'on_save_post'], 99, 3);
         add_action('wp_after_insert_post', [self::class, 'on_after_insert_post'], 99, 4);
+        add_action('wp_trash_post', [self::class, 'on_trash_post'], 99, 1);
+        add_action('before_delete_post', [self::class, 'on_before_delete_post'], 99, 1);
+        add_action('untrash_post', [self::class, 'on_untrash_post'], 99, 1);
         add_action('created_term', [self::class, 'on_term_saved'], 99, 3);
         add_action('edited_term', [self::class, 'on_term_saved'], 99, 3);
         add_action('shutdown', [self::class, 'flush_queue'], 999);
@@ -138,6 +148,22 @@ final class Laravel_Push_Sync
         self::$queuedTermKeys[$taxonomy . ':' . $termId] = true;
     }
 
+    public static function on_trash_post(int $postId): void
+    {
+        self::queue_lifecycle($postId, 'trash');
+    }
+
+    public static function on_before_delete_post(int $postId): void
+    {
+        // Move-to-trash chỉ gọi wp_trash_post; before_delete_post = xóa vĩnh viễn.
+        self::queue_lifecycle($postId, 'force_delete');
+    }
+
+    public static function on_untrash_post(int $postId): void
+    {
+        self::queue_lifecycle($postId, 'restore');
+    }
+
     private static function queue_post(int $postId): void
     {
         if ($postId <= 0) {
@@ -147,17 +173,77 @@ final class Laravel_Push_Sync
         self::$queuedPostIds[$postId] = true;
     }
 
+    private static function queue_lifecycle(int $postId, string $action): void
+    {
+        if (self::$suppressed || $postId <= 0) {
+            return;
+        }
+
+        if (wp_is_post_revision($postId) || wp_is_post_autosave($postId)) {
+            return;
+        }
+
+        if ((string) get_post_meta($postId, self::SKIP_META, true) === '1') {
+            return;
+        }
+
+        $post = get_post($postId);
+        if (! $post instanceof \WP_Post) {
+            return;
+        }
+
+        $supportedTypes = ['post', 'page', 'product'];
+        if (! in_array($post->post_type, $supportedTypes, true)) {
+            return;
+        }
+
+        if (Sync_Provider::is_sync_excluded_post($postId)) {
+            return;
+        }
+
+        $priority = [
+            'restore' => 1,
+            'trash' => 2,
+            'force_delete' => 3,
+        ];
+        $existing = self::$queuedLifecycle[$postId] ?? null;
+        $existingPriority = is_array($existing)
+            ? (int) ($priority[(string) ($existing['action'] ?? '')] ?? 0)
+            : 0;
+        $nextPriority = (int) ($priority[$action] ?? 0);
+        if ($existing !== null && $nextPriority < $existingPriority) {
+            return;
+        }
+
+        // Không đẩy nội dung upsert cho cùng post khi đang trash/xóa.
+        if ($action === 'trash' || $action === 'force_delete') {
+            unset(self::$queuedPostIds[$postId]);
+        }
+
+        self::$queuedLifecycle[$postId] = [
+            'action' => $action,
+            'type' => $post->post_type === 'product' ? 'product' : 'article',
+            'wp_post_type' => (string) $post->post_type,
+        ];
+    }
+
     public static function flush_queue(): void
     {
-        if (self::$queuedPostIds === [] && self::$queuedTermKeys === []) {
+        if (
+            self::$queuedPostIds === []
+            && self::$queuedTermKeys === []
+            && self::$queuedLifecycle === []
+        ) {
             return;
         }
 
         $postIds = array_map('intval', array_keys(self::$queuedPostIds));
         $termKeys = array_keys(self::$queuedTermKeys);
+        $lifecycle = self::$queuedLifecycle;
 
         self::$queuedPostIds = [];
         self::$queuedTermKeys = [];
+        self::$queuedLifecycle = [];
 
         $canPush = self::can_push();
         if (! $canPush['ok']) {
@@ -169,7 +255,23 @@ final class Laravel_Push_Sync
         $provider = new Sync_Provider();
         $items = [];
 
+        foreach ($lifecycle as $wpId => $meta) {
+            if (! is_array($meta)) {
+                continue;
+            }
+
+            $items[] = [
+                'wp_id' => (int) $wpId,
+                'type' => (string) ($meta['type'] ?? 'article'),
+                'wp_post_type' => (string) ($meta['wp_post_type'] ?? 'post'),
+                'action' => (string) ($meta['action'] ?? 'trash'),
+            ];
+        }
+
         foreach ($postIds as $postId) {
+            if (isset($lifecycle[$postId])) {
+                continue;
+            }
             $mapped = $provider->map_post_by_id((int) $postId);
             if (is_array($mapped)) {
                 $items[] = $mapped;
