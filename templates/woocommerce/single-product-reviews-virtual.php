@@ -12,6 +12,19 @@ defined('ABSPATH') || exit;
 global $product;
 
 if (! $product instanceof \WC_Product) {
+    $fallbackId = (int) get_queried_object_id();
+    if ($fallbackId <= 0) {
+        $fallbackId = (int) get_the_ID();
+    }
+    if ($fallbackId > 0 && function_exists('wc_get_product')) {
+        $resolved = wc_get_product($fallbackId);
+        if ($resolved instanceof \WC_Product) {
+            $product = $resolved;
+        }
+    }
+}
+
+if (! $product instanceof \WC_Product) {
     return;
 }
 

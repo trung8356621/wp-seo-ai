@@ -769,15 +769,44 @@ final class Rest_Controller
 
         $status = isset($body['status']) ? sanitize_key((string) $body['status']) : '';
         $allowedStatuses = ['publish', 'draft', 'pending', 'future', 'private'];
+        // Outbound Laravel → WP: chỉ nhận publish (lịch xử lý ở Laravel). draft/future bị bỏ.
+        if ($status === 'future') {
+            $status = 'publish';
+        }
+        $forcePublish = $status === 'publish';
+        $allowStatusDemote = filter_var($body['allow_status_demote'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $currentStatus = sanitize_key((string) $post->post_status);
+        // Không bao giờ hạ publish/private/future → draft/pending qua editor-sync.
+        if (
+            $status !== ''
+            && in_array($status, $allowedStatuses, true)
+            && self::is_status_demote($currentStatus, $status)
+            && ! $allowStatusDemote
+        ) {
+            Rest_Debug::log('editor_sync_status_demote_blocked', [
+                'post_id' => $postId,
+                'from' => $currentStatus,
+                'to' => $status,
+            ]);
+            $status = '';
+        }
         if ($status !== '' && in_array($status, $allowedStatuses, true)) {
             $update['post_status'] = $status;
             $changed = true;
         }
 
         $postDate = self::normalize_post_date($body['post_date'] ?? null);
+        // publish + post_date tương lai → WP tự đổi thành future. Clamp về now.
+        if ($forcePublish && $postDate !== '') {
+            $postDateTs = strtotime($postDate);
+            if ($postDateTs !== false && $postDateTs > time()) {
+                $postDate = current_time('mysql');
+            }
+        }
         if ($postDate !== '') {
             $update['post_date'] = $postDate;
             $update['post_date_gmt'] = get_gmt_from_date($postDate);
+            $update['edit_date'] = true;
             $changed = true;
         }
 
@@ -807,7 +836,11 @@ final class Rest_Controller
         if ($changed) {
             try {
                 update_post_meta($postId, '_omi_seo_ai_skip_push', '1');
-                $result = wp_update_post($update, true);
+                Laravel_Push_Sync::suppress(true);
+                $result = self::with_write_capabilities(static function () use ($update) {
+                    return wp_update_post($update, true);
+                });
+                Laravel_Push_Sync::suppress(false);
                 delete_post_meta($postId, '_omi_seo_ai_skip_push');
 
                 if (is_wp_error($result)) {
@@ -817,6 +850,7 @@ final class Rest_Controller
                     ], 422);
                 }
             } catch (\Throwable $exception) {
+                Laravel_Push_Sync::suppress(false);
                 delete_post_meta($postId, '_omi_seo_ai_skip_push');
                 Rest_Debug::log('editor_sync_post_update_failed', [
                     'post_id' => $postId,
@@ -828,6 +862,20 @@ final class Rest_Controller
                     $exception,
                     422,
                 );
+            }
+        }
+
+        // Bearer token không gắn WP user — ép publish lại nếu core/plugin hạ draft/pending.
+        if ($forcePublish) {
+            $publishOk = self::force_post_status($postId, 'publish', $postDate);
+            if (! $publishOk) {
+                return new WP_REST_Response([
+                    'success' => false,
+                    'message' => 'WordPress từ chối chuyển bài sang publish (vẫn còn '
+                        . (string) get_post_status($postId) . ').',
+                    'status' => (string) get_post_status($postId),
+                    'wp_post_id' => $postId,
+                ], 422);
             }
         }
 
@@ -897,6 +945,7 @@ final class Rest_Controller
             'redirect_created' => $redirectCreated,
             'slug' => (string) get_post_field('post_name', $postId),
             'permalink' => $newPermalink,
+            'status' => (string) $updatedPost->post_status,
             'faq_count' => $faqCount,
             'category_count' => $categoryCount,
             'virtual_count' => $virtualCount,
@@ -937,6 +986,137 @@ final class Rest_Controller
         return strtotime($date) !== false ? $date : '';
     }
 
+    /**
+     * publish/private/future → draft/pending = demote (cấm mặc định).
+     */
+    private static function is_status_demote(string $from, string $to): bool
+    {
+        $protected = ['publish', 'private', 'future'];
+        $demoted = ['draft', 'pending', 'auto-draft'];
+
+        return in_array($from, $protected, true) && in_array($to, $demoted, true);
+    }
+
+    /**
+     * REST write dùng Bearer token — không có WP user. Elevate tạm sang admin
+     * để wp_update_post / capability filter không hạ publish → pending/draft.
+     *
+     * @template T
+     * @param  callable(): T  $callback
+     * @return T
+     */
+    private static function with_write_capabilities(callable $callback)
+    {
+        $previousUserId = get_current_user_id();
+        $adminIds = get_users([
+            'role'   => 'administrator',
+            'number' => 1,
+            'fields' => 'ID',
+            'orderby' => 'ID',
+            'order'   => 'ASC',
+        ]);
+        $adminId = isset($adminIds[0]) ? (int) $adminIds[0] : 0;
+        if ($adminId > 0) {
+            wp_set_current_user($adminId);
+        }
+
+        try {
+            return $callback();
+        } finally {
+            wp_set_current_user($previousUserId);
+        }
+    }
+
+    /**
+     * Ép post_status (ưu tiên publish). Trả true khi status cuối khớp.
+     */
+    private static function force_post_status(int $postId, string $status, string $postDate = ''): bool
+    {
+        $status = sanitize_key($status);
+        if ($postId <= 0 || $status === '') {
+            return false;
+        }
+
+        if ((string) get_post_status($postId) === $status) {
+            return true;
+        }
+
+        update_post_meta($postId, '_omi_seo_ai_skip_push', '1');
+        Laravel_Push_Sync::suppress(true);
+
+        try {
+            self::with_write_capabilities(static function () use ($postId, $status, $postDate): void {
+                $payload = [
+                    'ID'          => $postId,
+                    'post_status' => $status,
+                ];
+
+                if ($status === 'publish' && $postDate !== '') {
+                    $postDateTs = strtotime($postDate);
+                    if ($postDateTs !== false && $postDateTs > time()) {
+                        $postDate = current_time('mysql');
+                    }
+                }
+
+                if ($postDate !== '') {
+                    $payload['post_date'] = $postDate;
+                    $payload['post_date_gmt'] = get_gmt_from_date($postDate);
+                    $payload['edit_date'] = true;
+                } elseif ($status === 'publish') {
+                    $existingDate = (string) get_post_field('post_date', $postId);
+                    if (
+                        $existingDate === ''
+                        || $existingDate === '0000-00-00 00:00:00'
+                        || strtotime($existingDate) > time()
+                    ) {
+                        $payload['post_date'] = current_time('mysql');
+                        $payload['post_date_gmt'] = current_time('mysql', true);
+                        $payload['edit_date'] = true;
+                    }
+                }
+
+                wp_update_post($payload, true);
+
+                $actual = (string) get_post_status($postId);
+                if ($status === 'publish' && $actual !== 'publish') {
+                    // future/draft/pending → publish thật.
+                    wp_publish_post($postId);
+                    $actual = (string) get_post_status($postId);
+                }
+
+                if ($actual !== $status) {
+                    global $wpdb;
+                    $wpdb->update(
+                        $wpdb->posts,
+                        [
+                            'post_status' => $status,
+                            'post_date' => $postDate !== '' ? $postDate : current_time('mysql'),
+                            'post_date_gmt' => $postDate !== ''
+                                ? get_gmt_from_date($postDate)
+                                : current_time('mysql', true),
+                        ],
+                        ['ID' => $postId],
+                        ['%s', '%s', '%s'],
+                        ['%d'],
+                    );
+                    clean_post_cache($postId);
+                    if ($status === 'publish') {
+                        $reloaded = get_post($postId);
+                        if ($reloaded instanceof \WP_Post) {
+                            do_action('transition_post_status', 'publish', $actual !== '' ? $actual : 'draft', $reloaded);
+                            do_action('publish_post', $postId, $reloaded);
+                        }
+                    }
+                }
+            });
+        } finally {
+            Laravel_Push_Sync::suppress(false);
+            delete_post_meta($postId, '_omi_seo_ai_skip_push');
+        }
+
+        return (string) get_post_status($postId) === $status;
+    }
+
     public static function handle_create_post(WP_REST_Request $request): WP_REST_Response
     {
         $body = $request->get_json_params();
@@ -960,9 +1140,13 @@ final class Rest_Controller
             ], 422);
         }
 
-        $status = sanitize_key((string) ($body['status'] ?? 'draft'));
-        if (! in_array($status, ['publish', 'draft', 'pending', 'future', 'private'], true)) {
-            $status = 'draft';
+        // Create từ Laravel sync: mặc định publish (không nhận future/draft lịch WP).
+        $status = sanitize_key((string) ($body['status'] ?? 'publish'));
+        if ($status === 'future') {
+            $status = 'publish';
+        }
+        if (! in_array($status, ['publish', 'draft', 'pending', 'private'], true)) {
+            $status = 'publish';
         }
 
         $postData = [
@@ -971,6 +1155,12 @@ final class Rest_Controller
             'post_type' => $postType,
         ];
         $postDate = self::normalize_post_date($body['post_date'] ?? null);
+        if ($status === 'publish' && $postDate !== '') {
+            $postDateTs = strtotime($postDate);
+            if ($postDateTs !== false && $postDateTs > time()) {
+                $postDate = current_time('mysql');
+            }
+        }
         if ($postDate !== '') {
             $postData['post_date'] = $postDate;
             $postData['post_date_gmt'] = get_gmt_from_date($postDate);
@@ -988,7 +1178,9 @@ final class Rest_Controller
 
         Laravel_Push_Sync::suppress(true);
         try {
-            $postId = wp_insert_post($postData, true);
+            $postId = self::with_write_capabilities(static function () use ($postData) {
+                return wp_insert_post($postData, true);
+            });
         } finally {
             Laravel_Push_Sync::suppress(false);
         }
@@ -1001,6 +1193,11 @@ final class Rest_Controller
         }
 
         $postId = (int) $postId;
+
+        if ($status === 'publish') {
+            self::force_post_status($postId, 'publish', $postDate);
+        }
+
         $createdPost = get_post($postId);
         $faqCount = 0;
         $seoApplied = false;
@@ -1028,6 +1225,7 @@ final class Rest_Controller
             'wp_post_id' => $postId,
             'slug' => (string) get_post_field('post_name', $postId),
             'permalink' => Permalink_Resolver::for_post($postId),
+            'status' => (string) get_post_status($postId),
             'post_date' => (string) get_post_field('post_date', $postId),
             'post_modified' => (string) get_post_field('post_modified', $postId),
             'faq_count' => $faqCount,
@@ -1409,6 +1607,18 @@ final class Rest_Controller
                     $formatted['rating'] = max(1, min(5, (int) $row[$key]));
                     break;
                 }
+            }
+        }
+
+        foreach (['_omi_review_id', '_omi_idempotency_key', '_omi_article_id'] as $omiKey) {
+            if (! array_key_exists($omiKey, $row)) {
+                continue;
+            }
+            $value = $row[$omiKey];
+            if ($omiKey === '_omi_review_id' || $omiKey === '_omi_article_id') {
+                $formatted[$omiKey] = (int) $value;
+            } else {
+                $formatted[$omiKey] = is_string($value) ? sanitize_text_field($value) : (string) $value;
             }
         }
 

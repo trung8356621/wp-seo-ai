@@ -31,13 +31,15 @@ final class Virtual_Comments
         add_action('woocommerce_before_single_product_reviews', [self::class, 'prime_product_reviews_query'], 1);
         add_filter('woocommerce_locate_template', [self::class, 'locate_virtual_product_reviews_template'], 20, 3);
         add_filter('wc_get_template', [self::class, 'filter_wc_get_template'], 20, 3);
-        add_filter('comments_template', [self::class, 'filter_comments_template'], 99);
+        // Priority cao hơn CusRev / theme — chúng thường replace comments_template.
+        add_filter('comments_template', [self::class, 'filter_comments_template'], 9999);
 
         add_filter('comments_array', [self::class, 'inject_virtual_comments'], 10, 2);
         add_filter('get_comment', [self::class, 'filter_get_comment'], 10, 2);
         add_filter('get_comment_metadata', [self::class, 'inject_virtual_comment_rating'], 10, 4);
         add_action('woocommerce_review_before_comment_meta', [self::class, 'display_virtual_review_rating'], 9);
-        add_filter('woocommerce_product_tabs', [self::class, 'filter_product_review_tab'], 50);
+        // CusRev (cr-reviews-ajax-*) chiếm tab reviews — ép callback về template ảo khi có meta.
+        add_filter('woocommerce_product_tabs', [self::class, 'filter_product_review_tab'], 999);
         add_filter('woocommerce_product_review_list_args', [self::class, 'filter_woocommerce_review_list_args'], 50, 1);
         add_filter('get_comments_number', [self::class, 'adjust_comments_number'], 10, 2);
 
@@ -70,8 +72,9 @@ final class Virtual_Comments
         return self::maybe_reviews_template_override($template, (string) $template_name);
     }
 
-    public static function filter_comments_template(string $template): string
+    public static function filter_comments_template($template): string
     {
+        $template = is_string($template) ? $template : '';
         $postId = self::resolve_product_post_id();
         if ($postId <= 0 || self::count_displayable_virtual_items($postId) <= 0) {
             return $template;
@@ -133,8 +136,43 @@ final class Virtual_Comments
         }
 
         $postId = (int) get_the_ID();
+        if ($postId > 0 && get_post_type($postId) === 'product') {
+            return $postId;
+        }
 
-        return get_post_type($postId) === 'product' ? $postId : 0;
+        global $post;
+        if ($post instanceof \WP_Post && $post->post_type === 'product') {
+            return (int) $post->ID;
+        }
+
+        return 0;
+    }
+
+    /**
+     * Render reviews tab — bypass CusRev AJAX empty state khi có virtual meta.
+     */
+    public static function render_virtual_reviews_tab(): void
+    {
+        global $product;
+
+        if (! $product instanceof \WC_Product) {
+            $postId = self::resolve_product_post_id();
+            if ($postId > 0 && function_exists('wc_get_product')) {
+                $resolved = wc_get_product($postId);
+                if ($resolved instanceof \WC_Product) {
+                    $product = $resolved;
+                }
+            }
+        }
+
+        $custom = OMI_SEO_AI_BRIDGE_PATH . 'templates/woocommerce/single-product-reviews-virtual.php';
+        if (! is_readable($custom)) {
+            comments_template();
+
+            return;
+        }
+
+        include $custom;
     }
 
     /**
@@ -170,11 +208,43 @@ final class Virtual_Comments
             self::$pendingWcTransientFlush[] = $postId;
         }
 
+        self::purge_page_caches_for_post($postId);
+
         return [
             'success' => true,
             'count'   => count($normalized),
             'message' => 'Virtual comments saved.',
         ];
+    }
+
+    /**
+     * WP Rocket / LiteSpeed thường cache HTML "There are no reviews yet".
+     */
+    private static function purge_page_caches_for_post(int $postId): void
+    {
+        $postId = (int) $postId;
+        if ($postId <= 0) {
+            return;
+        }
+
+        $url = get_permalink($postId);
+        if (! is_string($url) || $url === '') {
+            return;
+        }
+
+        if (function_exists('rocket_clean_post')) {
+            rocket_clean_post($postId);
+        } elseif (function_exists('rocket_clean_files')) {
+            rocket_clean_files($url);
+        }
+
+        if (class_exists('\\LiteSpeed\\Purge')) {
+            do_action('litespeed_purge_post', $postId);
+        }
+
+        if (function_exists('wp_cache_post_change')) {
+            wp_cache_post_change($postId);
+        }
     }
 
     /**
@@ -351,6 +421,9 @@ final class Virtual_Comments
             __('Reviews (%s)', 'woocommerce'),
             (string) $total,
         );
+
+        // CusRev thay callback → AJAX list rỗng dù meta đã có. Ép về template ảo.
+        $tabs['reviews']['callback'] = [self::class, 'render_virtual_reviews_tab'];
 
         return $tabs;
     }
@@ -566,6 +639,18 @@ final class Virtual_Comments
                 $row['rating'] = self::resolve_item_rating($item, $index);
             }
 
+            foreach (['_omi_review_id', '_omi_idempotency_key', '_omi_article_id'] as $omiKey) {
+                if (! array_key_exists($omiKey, $item)) {
+                    continue;
+                }
+                $value = $item[$omiKey];
+                if ($omiKey === '_omi_review_id' || $omiKey === '_omi_article_id') {
+                    $row[$omiKey] = (int) $value;
+                } else {
+                    $row[$omiKey] = is_string($value) ? sanitize_text_field($value) : (string) $value;
+                }
+            }
+
             $normalized[] = $row;
             $index++;
         }
@@ -611,6 +696,11 @@ final class Virtual_Comments
         $decoded = json_decode($raw, true);
         if (! is_array($decoded)) {
             $decoded = json_decode(stripslashes($raw), true);
+        }
+
+        // Double-encoded JSON string: "\"[{...}]\"" or "[{...}]" stored as quoted string.
+        if (is_string($decoded)) {
+            $decoded = json_decode(trim($decoded), true);
         }
 
         if (! is_array($decoded)) {
