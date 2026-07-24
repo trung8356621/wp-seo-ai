@@ -91,6 +91,24 @@ final class Rest_Controller
             'permission_callback' => [self::class, 'authorize_write'],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/posts/find-by-article', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_find_post_by_article'],
+            'permission_callback' => [self::class, 'authorize_write'],
+            'args'                => [
+                'article_id' => [
+                    'type'              => 'integer',
+                    'required'          => true,
+                    'sanitize_callback' => static fn ($value): int => max(0, (int) $value),
+                ],
+                'sync_key' => [
+                    'type'              => 'string',
+                    'required'          => false,
+                    'sanitize_callback' => static fn ($value): string => sanitize_text_field((string) $value),
+                ],
+            ],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/attachments/rename', [
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => [self::class, 'handle_rename_attachments'],
@@ -816,12 +834,20 @@ final class Rest_Controller
             $changed = true;
         }
 
-        $faqs = $body['faqs'] ?? [];
+        // Chỉ cập nhật meta FAQ khi payload có key "faqs". faqs:[] + meta đang có
+        // mà không clear_faqs → bỏ qua (tránh sync Laravel gửi [] nhầm xóa accordion).
         $faqCount = 0;
-        if (is_array($faqs)) {
-            $normalized = Faq_Shortcode::normalize_faq_payload($faqs);
-            Faq_Shortcode::store_faqs($postId, $normalized);
-            $faqCount = count($normalized);
+        if (array_key_exists('faqs', $body) && is_array($body['faqs'])) {
+            $normalized = Faq_Shortcode::normalize_faq_payload($body['faqs']);
+            $existingFaqs = Faq_Shortcode::resolve_faqs_for_post($postId);
+            $clearFaqs = ! empty($body['clear_faqs']);
+
+            if ($normalized !== [] || $clearFaqs || $existingFaqs === []) {
+                Faq_Shortcode::store_faqs($postId, $normalized);
+                $faqCount = count($normalized);
+            } else {
+                $faqCount = count($existingFaqs);
+            }
 
             if (
                 ! isset($update['post_content'])
@@ -1194,6 +1220,17 @@ final class Rest_Controller
 
         $postId = (int) $postId;
 
+        $articleIdMeta = isset($body['teamvia_article_id'])
+            ? (int) $body['teamvia_article_id']
+            : (isset($body['_teamvia_article_id']) ? (int) $body['_teamvia_article_id'] : 0);
+        $syncKeyMeta = trim((string) ($body['teamvia_sync_key'] ?? $body['_teamvia_sync_key'] ?? ''));
+        if ($articleIdMeta > 0) {
+            update_post_meta($postId, '_teamvia_article_id', $articleIdMeta);
+        }
+        if ($syncKeyMeta !== '') {
+            update_post_meta($postId, '_teamvia_sync_key', $syncKeyMeta);
+        }
+
         if ($status === 'publish') {
             self::force_post_status($postId, 'publish', $postDate);
         }
@@ -1233,6 +1270,73 @@ final class Rest_Controller
         ], 201);
     }
 
+    public static function handle_find_post_by_article(WP_REST_Request $request): WP_REST_Response
+    {
+        $articleId = (int) $request->get_param('article_id');
+        $syncKey = trim((string) $request->get_param('sync_key'));
+        if ($articleId <= 0) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'article_id is required.',
+            ], 422);
+        }
+
+        $queryArgs = [
+            'post_type' => ['post', 'product'],
+            'post_status' => ['publish', 'draft', 'pending', 'private', 'future'],
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+            'meta_query' => [
+                [
+                    'key' => '_teamvia_article_id',
+                    'value' => $articleId,
+                    'compare' => '=',
+                    'type' => 'NUMERIC',
+                ],
+            ],
+            'orderby' => 'ID',
+            'order' => 'ASC',
+        ];
+
+        $ids = get_posts($queryArgs);
+        if ((! is_array($ids) || $ids === []) && $syncKey !== '') {
+            $ids = get_posts([
+                'post_type' => ['post', 'product'],
+                'post_status' => ['publish', 'draft', 'pending', 'private', 'future'],
+                'posts_per_page' => 1,
+                'fields' => 'ids',
+                'meta_query' => [
+                    [
+                        'key' => '_teamvia_sync_key',
+                        'value' => $syncKey,
+                        'compare' => '=',
+                    ],
+                ],
+                'orderby' => 'ID',
+                'order' => 'ASC',
+            ]);
+        }
+
+        if (! is_array($ids) || $ids === []) {
+            return new WP_REST_Response([
+                'success' => true,
+                'found' => false,
+                'wp_post_id' => null,
+            ], 200);
+        }
+
+        $postId = (int) $ids[0];
+
+        return new WP_REST_Response([
+            'success' => true,
+            'found' => true,
+            'wp_post_id' => $postId,
+            'slug' => (string) get_post_field('post_name', $postId),
+            'permalink' => Permalink_Resolver::for_post($postId),
+            'status' => (string) get_post_status($postId),
+        ], 200);
+    }
+
     /**
      * FAQ, SEO meta và category sau khi post đã tồn tại (create hoặc editor-sync).
      *
@@ -1244,11 +1348,18 @@ final class Rest_Controller
         $changed = false;
         $faqCount = 0;
 
-        $faqs = $body['faqs'] ?? [];
-        if (is_array($faqs)) {
-            $normalized = Faq_Shortcode::normalize_faq_payload($faqs);
-            Faq_Shortcode::store_faqs($postId, $normalized);
-            $faqCount = count($normalized);
+        $faqCount = 0;
+        if (array_key_exists('faqs', $body) && is_array($body['faqs'])) {
+            $normalized = Faq_Shortcode::normalize_faq_payload($body['faqs']);
+            $existingFaqs = Faq_Shortcode::resolve_faqs_for_post($postId);
+            $clearFaqs = ! empty($body['clear_faqs']);
+
+            if ($normalized !== [] || $clearFaqs || $existingFaqs === []) {
+                Faq_Shortcode::store_faqs($postId, $normalized);
+                $faqCount = count($normalized);
+            } else {
+                $faqCount = count($existingFaqs);
+            }
 
             if (
                 $normalized !== []
