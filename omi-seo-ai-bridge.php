@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.61
+ * Version:           1.0.73
  * Author:            TVH
  */
 
@@ -12,7 +12,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.61');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.73');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL', 'omi_seo_laravel_api_url');
@@ -24,12 +24,23 @@ define('OMI_SEO_AI_BRIDGE_URL', plugin_dir_url(__FILE__));
 define('OMI_SEO_AI_BRIDGE_BASENAME', plugin_basename(__FILE__));
 
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-seo-plugin-resolver.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/providers/interface-seo-provider-adapter.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/providers/class-rank-math-provider-adapter.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/providers/class-yoast-provider-adapter.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/providers/class-aioseo-provider-adapter.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/providers/class-none-provider-adapter.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/providers/class-seo-provider-adapter-registry.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-permalink-resolver.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-post-images-extractor.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-renamer.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-variant-repair.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-binary-replacer.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-sync-provider.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-capability-manifest.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-link-catalog-extractor.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-score-exporter.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-site-sync-v2-provider.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-site-sync-outbox.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-polylang-sync.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-comment-review-publisher.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-schema-ld-exporter.php';
@@ -58,6 +69,7 @@ add_action('rest_api_init', static function (): void {
 
 add_action('init', static function (): void {
     \OmiSeoAiBridge\Laravel_Push_Sync::register();
+    \OmiSeoAiBridge\Site_Sync_Outbox::register();
     \OmiSeoAiBridge\Faq_Shortcode::register();
     \OmiSeoAiBridge\Rank_Math_Faq_Schema::register();
     \OmiSeoAiBridge\Virtual_Comments::register();

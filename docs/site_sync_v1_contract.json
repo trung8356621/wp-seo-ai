@@ -1,0 +1,37 @@
+{
+  "schema": "site_sync.v1",
+  "modes": ["snapshot", "delta"],
+  "min_bridge_version": "1.0.62",
+  "endpoints": {
+    "capabilities": "GET /omi-seo-ai/v1/capabilities",
+    "profile": "GET /omi-seo-ai/v1/sync/v2/profile",
+    "delta": "GET /omi-seo-ai/v1/sync/v2/delta",
+    "batches": "POST /omi-seo-ai/v1/sync/v2/batches",
+    "taxonomy_terms": "GET /omi-seo-ai/v1/taxonomies/{taxonomy}/terms",
+    "snapshot_callback": "POST /api/seo-wp-bridge/snapshot-callback"
+  },
+  "orchestrator_steps": [
+    "detect_capability",
+    "request_snapshot_delta",
+    "sync_site_profile",
+    "sync_url_catalog",
+    "sync_provider_keywords",
+    "missing_capability_fallback",
+    "validate_changed_links",
+    "finalize"
+  ],
+  "keyword_priority": ["manual", "provider", "workspace"],
+    "capabilities": [
+    "seo_metadata",
+    "focus_keyword",
+    "seo_score",
+    "internal_link",
+    "redirect",
+    "http_404",
+    "schema",
+    "contact_discovery",
+    "taxonomy",
+    "product_category_taxonomy_export",
+    "permalink"
+  ]
+}

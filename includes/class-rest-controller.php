@@ -54,6 +54,54 @@ final class Rest_Controller
             'permission_callback' => [self::class, 'authorize'],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/capabilities', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_capabilities'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/sync/v2/profile', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_sync_v2_profile'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/sync/v2/delta', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_sync_v2_delta'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/sync/v2/batches', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_sync_v2_batches'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/sync/v2/manifest', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_sync_v2_manifest'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/taxonomies/(?P<taxonomy>[a-z0-9_-]+)/terms', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_taxonomy_terms'],
+            'permission_callback' => [self::class, 'authorize'],
+            'args'                => [
+                'taxonomy' => [
+                    'type'              => 'string',
+                    'required'          => true,
+                    'sanitize_callback' => static fn ($value): string => sanitize_key((string) $value),
+                ],
+                'hide_empty' => [
+                    'required' => false,
+                    'type' => 'boolean',
+                    'default' => false,
+                ],
+            ],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/terms/(?P<taxonomy>[a-z0-9_-]+)/(?P<id>\d+)', [
             'methods'             => WP_REST_Server::READABLE,
             'callback'            => [self::class, 'handle_term'],
@@ -113,6 +161,26 @@ final class Rest_Controller
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => [self::class, 'handle_rename_attachments'],
             'permission_callback' => [self::class, 'authorize_write'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/attachments/usage', [
+            'methods'             => [WP_REST_Server::READABLE, WP_REST_Server::CREATABLE],
+            'callback'            => [self::class, 'handle_attachment_usage'],
+            'permission_callback' => static function (WP_REST_Request $request): bool {
+                return self::authorize_write($request) || self::authorize($request);
+            },
+            'args'                => [
+                'attachment_id' => [
+                    'type'              => 'integer',
+                    'required'          => true,
+                    'sanitize_callback' => static fn ($value): int => max(0, (int) $value),
+                ],
+                'old_url' => [
+                    'type'              => 'string',
+                    'required'          => false,
+                    'sanitize_callback' => static fn ($value): string => esc_url_raw(trim((string) $value)),
+                ],
+            ],
         ]);
 
         register_rest_route(self::NAMESPACE, '/attachments/update-meta', [
@@ -578,6 +646,31 @@ final class Rest_Controller
         return [$tempPath, $mime, true];
     }
 
+    public static function handle_attachment_usage(WP_REST_Request $request): WP_REST_Response
+    {
+        $body = $request->get_json_params();
+        if (! is_array($body)) {
+            $body = [];
+        }
+
+        $attachmentId = (int) ($request->get_param('attachment_id') ?: ($body['attachment_id'] ?? 0));
+        $oldUrl = trim((string) ($request->get_param('old_url') ?: ($body['old_url'] ?? '')));
+
+        if ($attachmentId <= 0) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Field "attachment_id" is required.',
+            ], 400);
+        }
+
+        $renamer = new Attachment_Renamer();
+        $result = $renamer->scan_usage($attachmentId, $oldUrl);
+
+        $status = ($result['success'] ?? false) ? 200 : 404;
+
+        return new WP_REST_Response($result, $status);
+    }
+
     public static function handle_rename_attachments(WP_REST_Request $request): WP_REST_Response
     {
         $body = $request->get_json_params();
@@ -585,6 +678,7 @@ final class Rest_Controller
             $body = [];
         }
 
+        $mode = trim((string) ($body['mode'] ?? 'bulk'));
         $items = $body['items'] ?? [];
         if (! is_array($items)) {
             return new WP_REST_Response([
@@ -593,14 +687,55 @@ final class Rest_Controller
             ], 400);
         }
 
+        if ($mode === 'explicit_single') {
+            $acknowledgeUrlChange = filter_var($body['acknowledge_url_change'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $confirmationPhrase = trim((string) ($body['confirmation_phrase'] ?? $body['confirmation_token'] ?? ''));
+
+            if (! $acknowledgeUrlChange) {
+                return new WP_REST_Response([
+                    'success' => false,
+                    'message' => 'Field "acknowledge_url_change" must be true for explicit_single rename.',
+                ], 400);
+            }
+
+            if ($confirmationPhrase !== 'RENAME') {
+                return new WP_REST_Response([
+                    'success' => false,
+                    'message' => 'Field "confirmation_phrase" must be "RENAME" for explicit_single rename.',
+                ], 400);
+            }
+
+            if (count($items) !== 1) {
+                return new WP_REST_Response([
+                    'success' => false,
+                    'message' => 'explicit_single mode allows exactly one item.',
+                ], 400);
+            }
+
+            if (isset($items[0]) && is_array($items[0])) {
+                $items[0]['strict_collision'] = true;
+            }
+        }
+
         $renamer = new Attachment_Renamer();
-        $result = $renamer->rename_batch($items);
+
+        if ($mode === 'explicit_single' && isset($items[0]) && is_array($items[0])) {
+            $singleResult = $renamer->rename_one_public($items[0]);
+            $result = [
+                'renamed'       => ($singleResult['success'] ?? false) ? [$singleResult] : [],
+                'posts_updated' => (int) ($singleResult['posts_updated'] ?? 0),
+                'errors'        => ($singleResult['success'] ?? false) ? [] : [$singleResult],
+            ];
+        } else {
+            $result = $renamer->rename_batch($items);
+        }
 
         $renamedCount = count($result['renamed']);
         $errorCount = count($result['errors']);
 
         return new WP_REST_Response([
             'success' => $renamedCount > 0 || ($renamedCount === 0 && $errorCount === 0),
+            'mode' => $mode,
             'renamed_count' => $renamedCount,
             'error_count' => $errorCount,
             'posts_updated' => (int) ($result['posts_updated'] ?? 0),
@@ -1224,11 +1359,15 @@ final class Rest_Controller
             ? (int) $body['teamvia_article_id']
             : (isset($body['_teamvia_article_id']) ? (int) $body['_teamvia_article_id'] : 0);
         $syncKeyMeta = trim((string) ($body['teamvia_sync_key'] ?? $body['_teamvia_sync_key'] ?? ''));
+        $operationKeyMeta = trim((string) ($body['publish_operation_key'] ?? $body['_omi_publish_operation_key'] ?? ''));
         if ($articleIdMeta > 0) {
             update_post_meta($postId, '_teamvia_article_id', $articleIdMeta);
         }
         if ($syncKeyMeta !== '') {
             update_post_meta($postId, '_teamvia_sync_key', $syncKeyMeta);
+        }
+        if ($operationKeyMeta !== '') {
+            update_post_meta($postId, '_omi_publish_operation_key', $operationKeyMeta);
         }
 
         if ($status === 'publish') {
@@ -1274,36 +1413,57 @@ final class Rest_Controller
     {
         $articleId = (int) $request->get_param('article_id');
         $syncKey = trim((string) $request->get_param('sync_key'));
-        if ($articleId <= 0) {
+        $operationKey = trim((string) $request->get_param('operation_key'));
+        if ($articleId <= 0 && $operationKey === '' && $syncKey === '') {
             return new WP_REST_Response([
                 'success' => false,
-                'message' => 'article_id is required.',
+                'message' => 'article_id, sync_key, or operation_key is required.',
             ], 422);
         }
 
-        $queryArgs = [
-            'post_type' => ['post', 'product'],
-            'post_status' => ['publish', 'draft', 'pending', 'private', 'future'],
-            'posts_per_page' => 1,
-            'fields' => 'ids',
-            'meta_query' => [
-                [
-                    'key' => '_teamvia_article_id',
-                    'value' => $articleId,
-                    'compare' => '=',
-                    'type' => 'NUMERIC',
+        $ids = [];
+        if ($articleId > 0) {
+            $ids = get_posts([
+                'post_type' => ['post', 'product'],
+                'post_status' => ['publish', 'draft', 'pending', 'private', 'future'],
+                'posts_per_page' => 5,
+                'fields' => 'ids',
+                'meta_query' => [
+                    [
+                        'key' => '_teamvia_article_id',
+                        'value' => $articleId,
+                        'compare' => '=',
+                        'type' => 'NUMERIC',
+                    ],
                 ],
-            ],
-            'orderby' => 'ID',
-            'order' => 'ASC',
-        ];
+                'orderby' => 'ID',
+                'order' => 'ASC',
+            ]);
+        }
 
-        $ids = get_posts($queryArgs);
+        if ((! is_array($ids) || $ids === []) && $operationKey !== '') {
+            $ids = get_posts([
+                'post_type' => ['post', 'product'],
+                'post_status' => ['publish', 'draft', 'pending', 'private', 'future'],
+                'posts_per_page' => 5,
+                'fields' => 'ids',
+                'meta_query' => [
+                    [
+                        'key' => '_omi_publish_operation_key',
+                        'value' => $operationKey,
+                        'compare' => '=',
+                    ],
+                ],
+                'orderby' => 'ID',
+                'order' => 'ASC',
+            ]);
+        }
+
         if ((! is_array($ids) || $ids === []) && $syncKey !== '') {
             $ids = get_posts([
                 'post_type' => ['post', 'product'],
                 'post_status' => ['publish', 'draft', 'pending', 'private', 'future'],
-                'posts_per_page' => 1,
+                'posts_per_page' => 5,
                 'fields' => 'ids',
                 'meta_query' => [
                     [
@@ -1322,6 +1482,20 @@ final class Rest_Controller
                 'success' => true,
                 'found' => false,
                 'wp_post_id' => null,
+                'match_count' => 0,
+                'ambiguous' => false,
+            ], 200);
+        }
+
+        $matchCount = count($ids);
+        if ($matchCount > 1) {
+            return new WP_REST_Response([
+                'success' => true,
+                'found' => false,
+                'ambiguous' => true,
+                'match_count' => $matchCount,
+                'wp_post_id' => null,
+                'candidate_ids' => array_map('intval', array_values($ids)),
             ], 200);
         }
 
@@ -1330,10 +1504,13 @@ final class Rest_Controller
         return new WP_REST_Response([
             'success' => true,
             'found' => true,
+            'ambiguous' => false,
+            'match_count' => 1,
             'wp_post_id' => $postId,
             'slug' => (string) get_post_field('post_name', $postId),
             'permalink' => Permalink_Resolver::for_post($postId),
             'status' => (string) get_post_status($postId),
+            'operation_key' => (string) get_post_meta($postId, '_omi_publish_operation_key', true),
         ], 200);
     }
 
@@ -1882,6 +2059,13 @@ final class Rest_Controller
                 'status' => (string) ($mapped['status'] ?? 'publish'),
                 'published_at' => $mapped['published_at'] ?? null,
                 'parent_id' => (int) ($mapped['parent_id'] ?? 0),
+                'parent_term_id' => (int) ($mapped['parent_term_id'] ?? $mapped['parent_id'] ?? 0),
+                'term_id' => (int) ($mapped['term_id'] ?? $mapped['wp_id'] ?? $termId),
+                'taxonomy' => (string) ($mapped['taxonomy'] ?? $taxonomy),
+                'post_count' => (int) ($mapped['post_count'] ?? 0),
+                'page_type' => (string) ($mapped['page_type'] ?? 'taxonomy'),
+                'name' => (string) ($mapped['name'] ?? $mapped['title'] ?? ''),
+                'url' => (string) ($mapped['url'] ?? $mapped['permalink'] ?? ''),
                 'post_content' => (string) ($mapped['post_content'] ?? ''),
                 'featured_image_url' => (string) ($mapped['featured_image_url'] ?? ''),
                 'product_gallery' => is_array($mapped['product_gallery'] ?? null)
@@ -1894,6 +2078,59 @@ final class Rest_Controller
                 'faqs' => is_array($mapped['faqs'] ?? null) ? $mapped['faqs'] : [],
                 'seo' => is_array($mapped['seo'] ?? null) ? $mapped['seo'] : [],
             ],
+        ], 200);
+    }
+
+    public static function handle_taxonomy_terms(WP_REST_Request $request): WP_REST_Response
+    {
+        $taxonomy = (string) $request->get_param('taxonomy');
+        if (! taxonomy_exists($taxonomy)) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Taxonomy not found.',
+            ], 404);
+        }
+
+        $hideEmpty = (bool) $request->get_param('hide_empty');
+        $terms = get_terms([
+            'taxonomy' => $taxonomy,
+            'hide_empty' => $hideEmpty,
+        ]);
+
+        if (is_wp_error($terms) || ! is_array($terms)) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Unable to list terms.',
+            ], 500);
+        }
+
+        $provider = new Sync_Provider();
+        $items = [];
+        foreach ($terms as $term) {
+            if (! $term instanceof \WP_Term) {
+                continue;
+            }
+            $mapped = $provider->map_term_by_id($taxonomy, (int) $term->term_id);
+            if (! is_array($mapped)) {
+                continue;
+            }
+            $items[] = [
+                'taxonomy' => $taxonomy,
+                'term_id' => (int) ($mapped['term_id'] ?? $mapped['wp_id'] ?? $term->term_id),
+                'parent_term_id' => (int) ($mapped['parent_term_id'] ?? $mapped['parent_id'] ?? 0),
+                'name' => (string) ($mapped['name'] ?? $mapped['title'] ?? ''),
+                'slug' => (string) ($mapped['slug'] ?? ''),
+                'url' => (string) ($mapped['url'] ?? $mapped['permalink'] ?? ''),
+                'post_count' => (int) ($mapped['post_count'] ?? $term->count),
+                'page_type' => 'taxonomy',
+            ];
+        }
+
+        return new WP_REST_Response([
+            'success' => true,
+            'taxonomy' => $taxonomy,
+            'count' => count($items),
+            'terms' => $items,
         ], 200);
     }
 
@@ -2030,6 +2267,92 @@ final class Rest_Controller
             'success'   => true,
             'message'   => 'Site SEO plugin info.',
             'site_info' => $info,
+        ], 200);
+    }
+
+    public static function handle_capabilities(WP_REST_Request $request): WP_REST_Response
+    {
+        unset($request);
+
+        $manifest = Capability_Manifest::build();
+
+        return new WP_REST_Response([
+            'success'  => true,
+            'message'  => 'Capability manifest.',
+            'manifest' => $manifest,
+        ], 200);
+    }
+
+    public static function handle_sync_v2_profile(WP_REST_Request $request): WP_REST_Response
+    {
+        unset($request);
+        $provider = new Site_Sync_V2_Provider();
+
+        return new WP_REST_Response([
+            'success' => true,
+            'message' => 'Site profile.',
+            'profile' => $provider->profile(),
+        ], 200);
+    }
+
+    public static function handle_sync_v2_delta(WP_REST_Request $request): WP_REST_Response
+    {
+        $provider = new Site_Sync_V2_Provider();
+        $batch = $provider->delta([
+            'cursor' => (string) $request->get_param('cursor'),
+            'run_token' => (string) $request->get_param('run_token'),
+            'mode' => 'delta',
+        ]);
+
+        return new WP_REST_Response([
+            'success' => true,
+            'message' => 'Delta batch.',
+            'batch' => $batch,
+        ], 200);
+    }
+
+    public static function handle_sync_v2_batches(WP_REST_Request $request): WP_REST_Response
+    {
+        try {
+            $provider = new Site_Sync_V2_Provider();
+            $params = $request->get_json_params();
+            if (! is_array($params)) {
+                $params = [];
+            }
+            $cursorParam = $params['cursor'] ?? $request->get_param('cursor');
+            $batch = $provider->batches([
+                'cursor' => $cursorParam === null ? '' : (string) $cursorParam,
+                'run_token' => (string) ($params['run_token'] ?? $request->get_param('run_token') ?? ''),
+                'mode' => (string) ($params['mode'] ?? 'snapshot'),
+                'include_unchanged' => (bool) ($params['include_unchanged'] ?? false),
+            ]);
+
+            return new WP_REST_Response([
+                'success' => true,
+                'message' => 'Snapshot/delta/force_full batch.',
+                'batch' => $batch,
+            ], 200);
+        } catch (\Throwable $e) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'batches failed: '.$e->getMessage(),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public static function handle_sync_v2_manifest(WP_REST_Request $request): WP_REST_Response
+    {
+        $provider = new Site_Sync_V2_Provider();
+        $summary = filter_var($request->get_param('summary'), FILTER_VALIDATE_BOOLEAN);
+        $manifest = $summary
+            ? $provider->lightweight_manifest_summary()
+            : $provider->lightweight_manifest();
+
+        return new WP_REST_Response([
+            'success' => true,
+            'message' => $summary ? 'Manifest summary.' : 'Lightweight reconciliation manifest.',
+            'manifest' => $manifest,
         ], 200);
     }
 

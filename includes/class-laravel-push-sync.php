@@ -53,6 +53,11 @@ final class Laravel_Push_Sync
         self::$suppressed = $suppressed;
     }
 
+    public static function is_suppressed(): bool
+    {
+        return self::$suppressed;
+    }
+
     public static function on_save_post(int $postId, $post, bool $update): void
     {
         unset($update);
@@ -297,6 +302,57 @@ final class Laravel_Push_Sync
         }
 
         self::send_items($items);
+        self::send_snapshot_callbacks($postIds);
+    }
+
+    /**
+     * @param list<int> $postIds
+     */
+    private static function send_snapshot_callbacks(array $postIds): void
+    {
+        $url = self::snapshot_callback_url();
+        $readToken = trim((string) get_option(OMI_SEO_AI_BRIDGE_OPTION_READ, ''));
+        if ($url === '' || $readToken === '') {
+            return;
+        }
+
+        $v2 = new Site_Sync_V2_Provider();
+        foreach ($postIds as $postId) {
+            $payload = $v2->item_for_post((int) $postId);
+            if ($payload === []) {
+                continue;
+            }
+            $payload['site_url'] = home_url('/');
+            $body = wp_json_encode($payload);
+            if (! is_string($body)) {
+                continue;
+            }
+            $args = [
+                'timeout' => 20,
+                'blocking' => false,
+                'headers' => [
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json',
+                    'Authorization' => 'Bearer ' . $readToken,
+                    'X-Seo-Read-Token' => $readToken,
+                ],
+                'body' => $body,
+            ];
+            wp_remote_post($url, $args);
+        }
+    }
+
+    private static function snapshot_callback_url(): string
+    {
+        if (! function_exists('omi_seo_ai_bridge_laravel_api_url')) {
+            return '';
+        }
+        $base = omi_seo_ai_bridge_laravel_api_url();
+        if ($base === '') {
+            return '';
+        }
+
+        return $base . '/api/seo-wp-bridge/snapshot-callback';
     }
 
     /**

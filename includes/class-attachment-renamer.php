@@ -14,6 +14,114 @@ if (! defined('ABSPATH')) {
 final class Attachment_Renamer
 {
     /**
+     * @return array{
+     *   success: bool,
+     *   attachment_id: int,
+     *   old_url: string,
+     *   filename: string,
+     *   wordpress_posts: int,
+     *   featured_references: int,
+     *   samples: array<int, array{post_id: int, title: string, post_type: string, reference_type: string}>,
+     *   supports_redirect: false,
+     *   message: string
+     * }
+     */
+    public function scan_usage(int $attachmentId, string $oldUrl = ''): array
+    {
+        $attachment = $attachmentId > 0 ? get_post($attachmentId) : null;
+        if (! $attachment instanceof \WP_Post || $attachment->post_type !== 'attachment') {
+            return [
+                'success'               => false,
+                'attachment_id'         => $attachmentId,
+                'old_url'               => $oldUrl,
+                'filename'              => '',
+                'wordpress_posts'       => 0,
+                'featured_references'   => 0,
+                'samples'               => [],
+                'supports_redirect'     => false,
+                'message'               => 'Attachment không tồn tại.',
+            ];
+        }
+
+        $attachmentUrl = (string) wp_get_attachment_url($attachmentId);
+        if ($oldUrl === '') {
+            $oldUrl = $attachmentUrl;
+        }
+
+        $file = get_attached_file($attachmentId);
+        $filename = is_string($file) && $file !== ''
+            ? wp_basename($file)
+            : ($attachmentUrl !== '' ? wp_basename(parse_url($attachmentUrl, PHP_URL_PATH) ?: '') : '');
+
+        $urlsToScan = array_values(array_unique(array_filter([$oldUrl, $attachmentUrl], static fn (string $url): bool => $url !== '')));
+
+        $contentPosts = $this->find_posts_referencing_urls($urlsToScan);
+        $featuredPosts = $this->find_posts_with_featured_image($attachmentId);
+
+        $wordpressPosts = count($contentPosts);
+        $featuredReferences = count($featuredPosts);
+
+        $samples = [];
+        foreach ($contentPosts as $postRow) {
+            if (count($samples) >= 20) {
+                break;
+            }
+            $samples[] = [
+                'post_id'         => (int) ($postRow['ID'] ?? 0),
+                'title'           => (string) ($postRow['post_title'] ?? ''),
+                'post_type'       => (string) ($postRow['post_type'] ?? ''),
+                'reference_type'  => 'post_content',
+            ];
+        }
+
+        if (count($samples) < 20) {
+            foreach ($featuredPosts as $postRow) {
+                if (count($samples) >= 20) {
+                    break;
+                }
+                $postId = (int) ($postRow['ID'] ?? 0);
+                $alreadySampled = false;
+                foreach ($samples as $sample) {
+                    if ((int) ($sample['post_id'] ?? 0) === $postId) {
+                        $alreadySampled = true;
+                        break;
+                    }
+                }
+                if ($alreadySampled) {
+                    continue;
+                }
+                $samples[] = [
+                    'post_id'         => $postId,
+                    'title'           => (string) ($postRow['post_title'] ?? ''),
+                    'post_type'       => (string) ($postRow['post_type'] ?? ''),
+                    'reference_type'  => 'featured_image',
+                ];
+            }
+        }
+
+        return [
+            'success'               => true,
+            'attachment_id'         => $attachmentId,
+            'old_url'               => $oldUrl,
+            'filename'              => $filename,
+            'wordpress_posts'       => $wordpressPosts,
+            'featured_references'   => $featuredReferences,
+            'samples'               => $samples,
+            'supports_redirect'     => false,
+            'message'               => 'OK',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    public function rename_one_public(array $item): array
+    {
+        return $this->rename_one($item);
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $items
      * @return array{renamed: array<int, array<string, mixed>>, posts_updated: int, errors: array<int, array<string, mixed>>}
      */
@@ -100,7 +208,17 @@ final class Attachment_Renamer
         $newFilename = $extension !== '' ? $newSlug . '.' . $extension : $newSlug;
         $newFile = trailingslashit($baseDir) . $newFilename;
 
+        $strictCollision = (bool) ($item['strict_collision'] ?? false);
+
         if ($newFile !== $file && is_file($newFile)) {
+            if ($strictCollision) {
+                return [
+                    'success'       => false,
+                    'attachment_id' => $attachmentId,
+                    'message'       => 'Filename already exists',
+                ];
+            }
+
             $uniqueFilename = wp_unique_filename($baseDir, $newFilename);
             $uniqueFilename = trim((string) $uniqueFilename);
 
@@ -283,6 +401,72 @@ final class Attachment_Renamer
         $slug = preg_replace('/\.[a-z0-9]{1,8}$/i', '', $slug) ?? $slug;
 
         return trim((string) $slug, '-_');
+    }
+
+    /**
+     * @param  array<int, string>  $urls
+     * @return array<int, array{ID: int|string, post_title: string, post_type: string}>
+     */
+    private function find_posts_referencing_urls(array $urls): array
+    {
+        global $wpdb;
+
+        $urls = array_values(array_unique(array_filter(array_map(
+            static fn ($url): string => trim((string) $url),
+            $urls
+        ), static fn (string $url): bool => $url !== '')));
+
+        if ($urls === []) {
+            return [];
+        }
+
+        $conditions = [];
+        $params = [];
+        foreach ($urls as $url) {
+            $conditions[] = 'post_content LIKE %s';
+            $params[] = '%' . $wpdb->esc_like($url) . '%';
+        }
+
+        $sql = "SELECT ID, post_title, post_type
+                FROM {$wpdb->posts}
+                WHERE (" . implode(' OR ', $conditions) . ")
+                AND post_type NOT IN ('attachment', 'revision', 'nav_menu_item')
+                AND post_status != 'auto-draft'
+                ORDER BY ID DESC";
+
+        $prepared = $wpdb->prepare($sql, ...$params);
+        if (! is_string($prepared)) {
+            return [];
+        }
+
+        $rows = $wpdb->get_results($prepared, ARRAY_A);
+
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * @return array<int, array{ID: int|string, post_title: string, post_type: string}>
+     */
+    private function find_posts_with_featured_image(int $attachmentId): array
+    {
+        global $wpdb;
+
+        if ($attachmentId <= 0) {
+            return [];
+        }
+
+        $sql = "SELECT p.ID, p.post_title, p.post_type
+                FROM {$wpdb->postmeta} pm
+                INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+                WHERE pm.meta_key = '_thumbnail_id'
+                AND pm.meta_value = %s
+                AND p.post_type NOT IN ('attachment', 'revision', 'nav_menu_item')
+                AND p.post_status != 'auto-draft'
+                ORDER BY p.ID DESC";
+
+        $rows = $wpdb->get_results($wpdb->prepare($sql, (string) $attachmentId), ARRAY_A);
+
+        return is_array($rows) ? $rows : [];
     }
 
     private function replace_url_in_all_posts(string $oldUrl, string $newUrl): int
