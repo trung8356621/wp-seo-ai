@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.75
+ * Version:           1.0.77
  * Author:            TVH
  */
 
@@ -12,7 +12,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.75');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.77');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL', 'omi_seo_laravel_api_url');
@@ -271,26 +271,32 @@ add_action('admin_init', static function (): void {
         exit;
     }
 
-    if (isset($_POST['omi_seo_manual_check_update'])) {
-        wp_clean_plugins_cache(true);
-        delete_site_transient('update_plugins');
-        wp_update_plugins();
-
+    if (isset($_POST['omi_seo_check_github_update']) || isset($_POST['omi_seo_manual_check_update'])) {
         $check = (new \OmiSeoAiBridge\Bridge_Update_Service())->check(true);
-        $hasUpdate = (bool) ($check['update_available'] ?? false);
-        $newVersion = (string) ($check['latest_version'] ?? '');
-        $remoteStatus = (($check['ok'] ?? false) === true)
-            ? ('GitHub OK'.($newVersion !== '' ? " (version {$newVersion})" : ''))
-            : (string) ($check['message'] ?? 'Không đọc được GitHub Release.');
+        $ok = (($check['ok'] ?? false) === true);
+        $hasUpdate = $ok && (bool) ($check['update_available'] ?? false);
+        $installed = (string) ($check['installed_version'] ?? '');
+        $latest = (string) ($check['latest_version'] ?? '');
 
-        $msg = $hasUpdate
-            ? "Đã phát hiện bản cập nhật {$newVersion}. {$remoteStatus}"
-            : "Chưa thấy bản cập nhật mới. {$remoteStatus}";
+        if (! $ok) {
+            $msg = (string) ($check['message'] ?? 'Không đọc được GitHub Releases.');
+        } elseif ($hasUpdate) {
+            $msg = sprintf(
+                'GitHub Releases: có bản mới %s (đang cài %s).',
+                $latest,
+                $installed !== '' ? $installed : 'không rõ'
+            );
+        } else {
+            $msg = sprintf(
+                'GitHub Releases OK. Đang dùng bản mới nhất%s.',
+                $latest !== '' ? ' ('.$latest.')' : ''
+            );
+        }
 
         wp_safe_redirect(add_query_arg([
             'page' => 'omi-seo-ai',
             'view' => 'settings',
-            'updatecheck_result' => $hasUpdate ? 'ok' : 'fail',
+            'updatecheck_result' => $ok ? 'ok' : 'fail',
             'updatecheck_msg' => rawurlencode($msg),
         ], admin_url('admin.php')));
         exit;

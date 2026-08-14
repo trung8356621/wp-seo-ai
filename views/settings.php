@@ -73,7 +73,7 @@ $localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warnin
 
         <?php if ($updatecheck_result !== '') : ?>
             <div class="omi-seo-ai-bridge-notice<?php echo $updatecheck_result === 'ok' ? '' : ' omi-seo-ai-bridge-notice--warn'; ?>" role="status">
-                <?php echo esc_html($updatecheck_msg !== '' ? $updatecheck_msg : __('Đã chạy kiểm tra update thủ công.', 'omi-seo-ai-bridge')); ?>
+                <?php echo esc_html($updatecheck_msg !== '' ? $updatecheck_msg : __('Đã kiểm tra GitHub Releases.', 'omi-seo-ai-bridge')); ?>
             </div>
         <?php endif; ?>
 
@@ -261,6 +261,19 @@ $localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warnin
 
         <hr style="margin: 28px 0; border: 0; border-top: 1px solid #e5e7eb;" />
 
+        <h3 style="margin: 0 0 12px;"><?php esc_html_e('Cập nhật plugin (GitHub Releases)', 'omi-seo-ai-bridge'); ?></h3>
+        <p class="description" style="margin-bottom: 16px;">
+            <?php esc_html_e('Kiểm tra bản mới từ GitHub Releases. Không gọi Laravel Update Server.', 'omi-seo-ai-bridge'); ?>
+        </p>
+        <div class="omi-seo-ai-bridge-actions" style="margin-bottom: 24px;">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=settings')); ?>">
+                <?php wp_nonce_field('omi_seo_ai_bridge_save_settings'); ?>
+                <button type="submit" name="omi_seo_check_github_update" value="1" class="button button-secondary">
+                    <?php esc_html_e('Check GitHub', 'omi-seo-ai-bridge'); ?>
+                </button>
+            </form>
+        </div>
+
         <h3 style="margin: 0 0 12px;"><?php esc_html_e('Kiểm tra đồng bộ Laravel', 'omi-seo-ai-bridge'); ?></h3>
         <p class="description" style="margin-bottom: 16px;">
             <?php esc_html_e('Plugin tự chọn URL Dev hoặc Production theo môi trường WordPress. Dev: http://127.0.0.1:8000 khi WP và Laravel cùng máy. Production: domain public của Laravel.', 'omi-seo-ai-bridge'); ?>
@@ -271,13 +284,6 @@ $localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warnin
                 <?php wp_nonce_field('omi_seo_ai_bridge_save_settings'); ?>
                 <button type="submit" name="omi_seo_test_laravel" value="1" class="button button-secondary">
                     <?php esc_html_e('Kiểm tra kết nối Laravel', 'omi-seo-ai-bridge'); ?>
-                </button>
-            </form>
-
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=settings')); ?>">
-                <?php wp_nonce_field('omi_seo_ai_bridge_save_settings'); ?>
-                <button type="submit" name="omi_seo_manual_check_update" value="1" class="button button-secondary">
-                    <?php esc_html_e('Check update thủ công', 'omi-seo-ai-bridge'); ?>
                 </button>
             </form>
         </div>

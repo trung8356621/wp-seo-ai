@@ -249,6 +249,11 @@ omi_assert(! str_contains($updaterSrc, '/api/seo/plugin/update-check'), 'updater
 omi_assert(! str_contains($updaterSrc, 'fetch_legacy_laravel'), 'updater has no Laravel fallback');
 omi_assert(str_contains($updaterSrc, 'Bridge_Update_Service'), 'updater uses GitHub Bridge_Update_Service');
 
+$bootstrapSrc = (string) file_get_contents(dirname(__DIR__).'/omi-seo-ai-bridge.php');
+omi_assert(! str_contains($bootstrapSrc, '/api/seo/plugin/update-check'), 'settings check does not hit Laravel update-check');
+omi_assert(str_contains($bootstrapSrc, 'Bridge_Update_Service'), 'settings check uses Bridge_Update_Service');
+omi_assert(str_contains($bootstrapSrc, 'omi_seo_check_github_update'), 'settings has Check GitHub action');
+
 if ($failures > 0) {
     fwrite(STDERR, "{$failures} assertion(s) failed\n");
     exit(1);
