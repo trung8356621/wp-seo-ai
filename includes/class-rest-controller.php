@@ -157,6 +157,31 @@ final class Rest_Controller
             ],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/observe', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_observe_post'],
+            'permission_callback' => [self::class, 'authorize'],
+            'args'                => [
+                'id' => [
+                    'type'              => 'integer',
+                    'required'          => true,
+                    'sanitize_callback' => static fn ($value): int => max(0, (int) $value),
+                ],
+            ],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/keyword-dictionary/apply', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_keyword_dictionary_apply'],
+            'permission_callback' => [self::class, 'authorize_write'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/link-analysis/batch', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_link_analysis_batch'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/posts', [
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => [self::class, 'handle_create_post'],
@@ -2379,11 +2404,15 @@ final class Rest_Controller
             'plugin_update',
             'github_release_update',
             'manual_update',
+            'keyword_dictionary_apply',
+            'link_analysis_batch',
+            'post_observe',
         ] as $key) {
             $flags[$key] = (bool) ($rawCaps[$key]['available'] ?? false);
         }
 
         $info = Seo_Plugin_Resolver::site_info();
+        $dictionary = Keyword_Dictionary_Store::current();
 
         return new WP_REST_Response([
             'success' => true,
@@ -2392,6 +2421,86 @@ final class Rest_Controller
             'wp_version' => (string) ($info['wordpress_version'] ?? get_bloginfo('version')),
             'capabilities' => $flags,
             'plugin_update_source' => 'github_release',
+            'local_engine_readiness' => [
+                'link_health' => true,
+                'link_graph' => true,
+                'keyword_dictionary' => is_array($dictionary) && ($dictionary['hash'] ?? '') !== '',
+                'link_analysis' => true,
+            ],
+        ], 200);
+    }
+
+    public static function handle_observe_post(WP_REST_Request $request): WP_REST_Response
+    {
+        $postId = (int) $request->get_param('id');
+        $post = get_post($postId);
+        if (! $post instanceof \WP_Post) {
+            return new WP_REST_Response([
+                'success' => true,
+                'found' => false,
+                'missing' => true,
+                'post' => [
+                    'wp_post_id' => $postId,
+                    'status' => 'missing',
+                ],
+            ], 200);
+        }
+
+        return new WP_REST_Response([
+            'success' => true,
+            'found' => true,
+            'missing' => false,
+            'post' => [
+                'wp_post_id' => (int) $post->ID,
+                'status' => (string) $post->post_status,
+                'permalink' => (string) Permalink_Resolver::for_post((int) $post->ID),
+                'post_modified' => (string) $post->post_modified_gmt,
+                'post_type' => (string) $post->post_type,
+            ],
+        ], 200);
+    }
+
+    public static function handle_keyword_dictionary_apply(WP_REST_Request $request): WP_REST_Response
+    {
+        $params = $request->get_json_params();
+        if (! is_array($params)) {
+            $params = [];
+        }
+        $operationId = trim((string) ($params['operation_id'] ?? $request->get_param('operation_id') ?? ''));
+        $hash = trim((string) ($params['dictionary_hash'] ?? $params['hash'] ?? ''));
+        $version = trim((string) ($params['dictionary_version'] ?? $params['version'] ?? ''));
+        if ($operationId === '' || ($hash === '' && $version === '')) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'operation_id and dictionary_hash/version required.',
+            ], 400);
+        }
+
+        $cached = Operation_Store::lookup_any($operationId);
+        if (is_array($cached)) {
+            return new WP_REST_Response($cached, 200);
+        }
+
+        $result = Keyword_Dictionary_Store::apply($params);
+        Operation_Store::remember_any($operationId, $result);
+
+        return new WP_REST_Response($result, 200);
+    }
+
+    public static function handle_link_analysis_batch(WP_REST_Request $request): WP_REST_Response
+    {
+        $params = $request->get_json_params();
+        if (! is_array($params)) {
+            $params = [];
+        }
+        $cursor = (int) ($params['cursor'] ?? $request->get_param('cursor') ?? 0);
+        $limit = (int) ($params['limit'] ?? $request->get_param('limit') ?? Local_Seo_Engine::BATCH_SIZE);
+        $engine = new Local_Seo_Engine();
+
+        return new WP_REST_Response([
+            'success' => true,
+            'message' => 'Link analysis batch.',
+            'batch' => $engine->process_batch($cursor, $limit),
         ], 200);
     }
 

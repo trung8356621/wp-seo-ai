@@ -51,6 +51,8 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-operation-store.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-github-release-client.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-bridge-update-service.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-link-health-engine.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-keyword-dictionary-store.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-local-seo-engine.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-controller.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-laravel-push-sync.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-faq-shortcode.php';
@@ -75,6 +77,7 @@ add_action('rest_api_init', static function (): void {
 add_action('init', static function (): void {
     \OmiSeoAiBridge\Laravel_Push_Sync::register();
     \OmiSeoAiBridge\Site_Sync_Outbox::register();
+    \OmiSeoAiBridge\Local_Seo_Engine::register();
     \OmiSeoAiBridge\Faq_Shortcode::register();
     \OmiSeoAiBridge\Rank_Math_Faq_Schema::register();
     \OmiSeoAiBridge\Virtual_Comments::register();
@@ -273,35 +276,12 @@ add_action('admin_init', static function (): void {
         delete_site_transient('update_plugins');
         wp_update_plugins();
 
-        $transient = get_site_transient('update_plugins');
-        $pluginKey = OMI_SEO_AI_BRIDGE_BASENAME;
-        $hasUpdate = is_object($transient)
-            && isset($transient->response)
-            && is_array($transient->response)
-            && isset($transient->response[$pluginKey]);
-
-        $updateInfo = $hasUpdate ? $transient->response[$pluginKey] : null;
-        $newVersion = is_object($updateInfo) ? (string) ($updateInfo->new_version ?? '') : '';
-        $remoteStatus = 'Không đọc được update endpoint.';
-
-        $base = omi_seo_ai_bridge_laravel_api_url();
-        if ($base !== '') {
-            $url = $base . '/api/seo/plugin/update-check';
-            $resp = wp_remote_get($url, [
-                'timeout' => 15,
-                'headers' => ['Accept' => 'application/json'],
-            ]);
-            if (is_wp_error($resp)) {
-                $remoteStatus = 'Lỗi endpoint: ' . $resp->get_error_message();
-            } else {
-                $code = (int) wp_remote_retrieve_response_code($resp);
-                $body = json_decode((string) wp_remote_retrieve_body($resp), true);
-                $version = is_array($body) ? (string) ($body['version'] ?? '') : '';
-                $remoteStatus = $code === 200
-                    ? ('Endpoint OK' . ($version !== '' ? " (version {$version})" : ''))
-                    : "Endpoint HTTP {$code}";
-            }
-        }
+        $check = (new \OmiSeoAiBridge\Bridge_Update_Service())->check(true);
+        $hasUpdate = (bool) ($check['update_available'] ?? false);
+        $newVersion = (string) ($check['latest_version'] ?? '');
+        $remoteStatus = (($check['ok'] ?? false) === true)
+            ? ('GitHub OK'.($newVersion !== '' ? " (version {$newVersion})" : ''))
+            : (string) ($check['message'] ?? 'Không đọc được GitHub Release.');
 
         $msg = $hasUpdate
             ? "Đã phát hiện bản cập nhật {$newVersion}. {$remoteStatus}"

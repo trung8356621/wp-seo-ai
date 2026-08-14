@@ -4,7 +4,7 @@
 
 - This repository is the WordPress bridge plugin for the Omnichannel workspace.
 - Display name may be `OmniChannel SEO AI Bridge`; main plugin file is `omi-seo-ai-bridge.php`.
-- The Laravel backend at `..\omnichannel-backend` is canonical for business workflow, publishing schedule, Site Sync orchestration, Agent/MCP, plugin update server, and core contracts.
+- The Laravel backend at `..\omnichannel-client` is canonical for business workflow, publishing schedule, Site Sync orchestration, Agent/MCP, and core contracts. Plugin ZIP distribution is GitHub Releases only.
 - This plugin exposes WordPress REST endpoints, reads/writes WP content/media/SEO metadata, pushes local changes to Laravel, and receives Laravel writes through token-authenticated API calls.
 
 ## Source Of Truth
@@ -31,7 +31,7 @@
 - Codex MUST write memory ONLY WHEN a durable decision has been verified from code/docs or explicitly confirmed by the user.
 - Codex MUST NOT deploy, upload, commit, push, install dependencies, run migrations, alter databases, package releases, or bump plugin version unless explicitly requested.
 - Codex MUST NOT automatically increment the plugin version. Version changes require explicit release/versioning request.
-- Codex MUST NOT run `compress_plugin.ps1` unless the user explicitly asks for plugin packaging/release.
+- Codex MUST NOT package plugin ZIPs, create GitHub Releases, or bump plugin version unless explicitly requested.
 - Codex MUST NOT use backend `.secure\deploy-diff.ps1` for plugin files; that script only tracks `..\omnichannel-backend`.
 
 ## Plugin Architecture
@@ -55,7 +55,7 @@
 
 - This repo currently has no `composer.json`, `package.json`, or `phpunit.xml`; do not invent test/build commands.
 - For source changes, inspect syntax-sensitive PHP around changed methods and recommend a WP/PHP syntax check only when available in the user's environment.
-- Plugin packaging workflow is `..\omnichannel-backend\compress_plugin.ps1`; it copies this repo into a zip and updates Laravel update-server files. Run it ONLY WHEN explicitly requested.
+- Plugin packaging is manual ZIP uploaded to GitHub Releases (`omi-seo-ai-bridge-x.y.z.zip`). Do not host packages on Laravel.
 - For contract changes, also use backend verification guidance in `..\omnichannel-backend\AGENTS.md`.
 
 ## Skills

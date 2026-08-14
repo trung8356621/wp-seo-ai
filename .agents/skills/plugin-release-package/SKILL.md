@@ -1,15 +1,15 @@
 ---
 name: plugin-release-package
-description: "Trigger only for explicit WordPress plugin release, package, zip, version bump, update server, compress_plugin, or publish plugin requests. Do not use for ordinary plugin edits, contract checks, or documentation-only tasks."
+description: "Trigger only for explicit WordPress plugin version bump or GitHub Release packaging requests. Do not use for ordinary plugin edits or contract checks."
 ---
 
 # Purpose
 
-Handle explicit release/package work for the WordPress bridge plugin.
+Handle explicit version/release work for the WordPress bridge plugin.
 
 # Trigger conditions
 
-Use only when the user explicitly asks to bump version, create a plugin zip, package the plugin, update the Laravel plugin update server, run `compress_plugin.ps1`, or release the WordPress plugin.
+Use only when the user explicitly asks to bump version or publish a GitHub Release for `wp-seo-ai`.
 
 Do not trigger for normal code edits.
 
@@ -17,39 +17,26 @@ Do not trigger for normal code edits.
 
 - Plugin main file: `omi-seo-ai-bridge.php`.
 - Current plugin header `Version:` and `OMI_SEO_AI_BRIDGE_VERSION` constant.
-- Packaging script: `..\omnichannel-backend\compress_plugin.ps1`.
-- Backend update-server location is defined by that script; do not infer a different target.
+- Distribution: GitHub Releases at `https://github.com/trung8356621/wp-seo-ai`.
+- Expected asset name: `omi-seo-ai-bridge-{version}.zip` with plugin folder `omi-seo-ai-bridge/` at ZIP root.
 
 # Workflow
 
-1. Confirm the user explicitly requested release/package/versioning.
+1. Confirm the user explicitly requested release/versioning.
 2. Read the current version from plugin header and constant.
-3. Choose version bump only from user instruction. If user did not specify bump type, ask before changing version.
+3. Choose version bump only from user instruction.
 4. Keep header version and `OMI_SEO_AI_BRIDGE_VERSION` synchronized.
-5. Run packaging script only after explicit approval/request:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "..\omnichannel-backend\compress_plugin.ps1"
-```
-
-6. Check generated files in backend update-server storage only when packaging was requested.
-
-# Verification
-
-- Confirm version header and constant match.
-- Confirm package command result when run.
-- Check both repo statuses.
+5. Do not create GitHub Releases, upload ZIP, commit, or push unless separately requested.
+6. There is no `compress_plugin.ps1` and no Laravel update-server packaging.
 
 # Safety and approval boundaries
 
 - MUST NOT bump version automatically.
 - MUST NOT package automatically after ordinary edits.
-- MUST NOT deploy, FTP/SFTP upload, commit, or push unless separately and explicitly requested.
-- MUST NOT read credentials or live tokens.
+- MUST NOT deploy, commit, or push unless separately and explicitly requested.
 
 # Expected final report
 
 - Old version and new version, if changed.
-- Whether packaging ran.
-- Generated package path if packaging ran.
-- Files changed in plugin and backend update-server storage.
+- Expected GitHub tag `vx.y.z` and ZIP filename.
+- Confirmation that Laravel was not used as a package host.

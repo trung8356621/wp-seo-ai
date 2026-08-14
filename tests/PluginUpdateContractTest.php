@@ -244,7 +244,10 @@ omi_assert(
 );
 omi_assert(! str_contains($restSrc, 'permission_callback\' => [self::class, \'__return_true\']'), 'no public update routes');
 
-omi_assert(Operation_Store::OPTION_PREFIX === 'omi_seo_op_', 'reuses Operation_Store prefix');
+$updaterSrc = (string) file_get_contents(dirname(__DIR__).'/includes/class-plugin-updater.php');
+omi_assert(! str_contains($updaterSrc, '/api/seo/plugin/update-check'), 'updater has no Laravel update-check URL');
+omi_assert(! str_contains($updaterSrc, 'fetch_legacy_laravel'), 'updater has no Laravel fallback');
+omi_assert(str_contains($updaterSrc, 'Bridge_Update_Service'), 'updater uses GitHub Bridge_Update_Service');
 
 if ($failures > 0) {
     fwrite(STDERR, "{$failures} assertion(s) failed\n");

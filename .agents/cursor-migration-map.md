@@ -9,7 +9,7 @@
 | `includes/class-rest-controller.php` | `AGENTS.md` | merged | REST namespace, auth, endpoint surfaces verified. |
 | `includes/class-laravel-push-sync.php` | `AGENTS.md` | merged | WordPress-to-Laravel push role verified. |
 | `includes/class-site-sync-outbox.php` | `AGENTS.md` | merged | Outbox/WP-Cron delta role verified. |
-| `includes/class-plugin-updater.php` | `AGENTS.md`; `.agents/skills/plugin-release-package/SKILL.md` | merged | Laravel update server integration verified. |
+| `includes/class-plugin-updater.php` | `AGENTS.md`; `.agents/skills/plugin-release-package/SKILL.md` | merged | GitHub Release updater only; Laravel update server removed. |
 | `README.md` | `.agents/cursor-migration-map.md` | skipped-obsolete | File not present. |
 | `.cursor/rules/**/*.mdc` | `.agents/cursor-migration-map.md` | skipped-obsolete | Directory not present. |
 | `.cursor/commands/**/*.md` | `.agents/cursor-migration-map.md` | skipped-obsolete | Directory not present. |

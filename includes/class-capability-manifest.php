@@ -116,6 +116,18 @@ final class Capability_Manifest
                 'available' => true,
                 'provider' => 'omi_bridge',
             ],
+            'keyword_dictionary_apply' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+            'link_analysis_batch' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+            'post_observe' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
         ];
         $capabilities = array_merge($capabilities, $localEngine);
 

@@ -9,21 +9,16 @@ if (! defined('ABSPATH')) {
 }
 
 /**
- * WP native update discovery.
- * Primary: GitHub Release asset. Fallback: legacy Laravel update-check (old sites).
- * Does not enable unattended auto-updates.
+ * WP native update discovery from GitHub Releases only.
+ * Does not enable unattended auto-updates. No Laravel update-server fallback.
  */
 final class Plugin_Updater
 {
-    private const UPDATE_PATH = '/api/seo/plugin/update-check';
-
     private string $plugin_file;
 
     private string $plugin_basename;
 
     private string $plugin_slug;
-
-    private string $update_url;
 
     private function __construct(string $plugin_file)
     {
@@ -33,7 +28,6 @@ final class Plugin_Updater
         $this->plugin_slug = ($slugDir === '.' || $slugDir === '\\')
             ? basename($this->plugin_basename, '.php')
             : $slugDir;
-        $this->update_url = $this->resolve_update_check_url();
     }
 
     public static function boot(string $plugin_file): void
@@ -224,41 +218,11 @@ final class Plugin_Updater
     private function fetch_remote_metadata(): ?array
     {
         $github = (new Bridge_Update_Service())->wordpress_update_metadata();
-        if (is_array($github) && trim((string) ($github['download_url'] ?? '')) !== '') {
-            return $github;
-        }
-
-        return $this->fetch_legacy_laravel_metadata();
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function fetch_legacy_laravel_metadata(): ?array
-    {
-        if ($this->update_url === '') {
+        if (! is_array($github) || trim((string) ($github['download_url'] ?? '')) === '') {
             return null;
         }
 
-        $response = wp_remote_get($this->update_url, [
-            'timeout' => 15,
-            'headers' => [
-                'Accept' => 'application/json',
-            ],
-        ]);
-
-        if (is_wp_error($response)) {
-            return null;
-        }
-
-        if ((int) wp_remote_retrieve_response_code($response) !== 200) {
-            return null;
-        }
-
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-
-        return is_array($data) ? $data : null;
+        return $github;
     }
 
     private function resolve_installed_version(): string
@@ -282,26 +246,5 @@ final class Plugin_Updater
     private function normalize_version(string $version): string
     {
         return trim($version);
-    }
-
-    private function resolve_update_check_url(): string
-    {
-        $base = '';
-        if (function_exists('omi_seo_ai_bridge_laravel_api_url')) {
-            $base = omi_seo_ai_bridge_laravel_api_url();
-        }
-
-        if ($base === '') {
-            $base = (string) apply_filters('omi_seo_ai_bridge_update_api_base', '');
-            $base = rtrim($base, '/');
-        }
-
-        if ($base === '') {
-            return '';
-        }
-
-        $url = $base . self::UPDATE_PATH;
-
-        return (string) apply_filters('omi_seo_ai_bridge_update_check_url', $url);
     }
 }
