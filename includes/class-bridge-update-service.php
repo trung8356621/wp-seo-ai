@@ -317,14 +317,14 @@ final class Bridge_Update_Service
             return (string) OMI_SEO_AI_BRIDGE_BASENAME;
         }
 
-        return 'omi-seo-ai-bridge/omi-seo-ai-bridge.php';
+        return 'wp-seo-ai/omi-seo-ai-bridge.php';
     }
 
     private function plugin_slug(): string
     {
         $dir = dirname($this->plugin_basename());
 
-        return ($dir === '.' || $dir === '\\') ? 'omi-seo-ai-bridge' : $dir;
+        return ($dir === '.' || $dir === '\\') ? 'wp-seo-ai' : $dir;
     }
 
     private function plugin_is_active(): bool

@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.77
+ * Version:           1.0.79
  * Author:            TVH
  */
 
@@ -12,7 +12,41 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.77');
+if (
+    defined('OMI_SEO_AI_BRIDGE_LOADED')
+    || defined('OMI_SEO_AI_BRIDGE_VERSION')
+    || function_exists('omi_seo_ai_bridge_render_admin_page')
+) {
+    $thisBasename = plugin_basename(__FILE__);
+    $loadedBasename = defined('OMI_SEO_AI_BRIDGE_BASENAME') ? (string) OMI_SEO_AI_BRIDGE_BASENAME : '';
+    if ($loadedBasename === '' || $loadedBasename === $thisBasename) {
+        return;
+    }
+
+    add_action('admin_init', static function () use ($thisBasename): void {
+        if (! function_exists('deactivate_plugins')) {
+            return;
+        }
+        deactivate_plugins($thisBasename, true);
+    });
+    add_action('admin_notices', static function () use ($thisBasename, $loadedBasename): void {
+        if (! current_user_can('activate_plugins')) {
+            return;
+        }
+        echo '<div class="notice notice-error"><p>';
+        echo esc_html(sprintf(
+            'TVH SEO AI Bridge chỉ được cài một thư mục: wp-seo-ai. Đang chạy %s — hãy xóa %s rồi bật lại wp-seo-ai.',
+            $loadedBasename,
+            $thisBasename
+        ));
+        echo '</p></div>';
+    });
+    return;
+}
+
+define('OMI_SEO_AI_BRIDGE_LOADED', true);
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.79');
+define('OMI_SEO_AI_BRIDGE_SLUG', 'wp-seo-ai');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_LARAVEL_URL', 'omi_seo_laravel_api_url');

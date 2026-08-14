@@ -18,7 +18,7 @@ Do not trigger for normal code edits.
 - Plugin main file: `omi-seo-ai-bridge.php`.
 - Current plugin header `Version:` and `OMI_SEO_AI_BRIDGE_VERSION` constant.
 - Distribution: GitHub Releases at `https://github.com/trung8356621/wp-seo-ai`.
-- Expected asset name: `omi-seo-ai-bridge-{version}.zip` with plugin folder `omi-seo-ai-bridge/` at ZIP root.
+- Expected asset name: `wp-seo-ai-{version}.zip` with plugin folder `wp-seo-ai/` at ZIP root. Legacy `omi-seo-ai-bridge-{version}.zip` is still accepted by the updater.
 
 # Workflow
 

@@ -8,7 +8,7 @@ Do not auto-increment version on ordinary edits.
 
 Plugin distribution is GitHub Releases only:
 - Tag: vx.y.z
-- Asset: omi-seo-ai-bridge-x.y.z.zip
+- Asset: wp-seo-ai-x.y.z.zip (folder `wp-seo-ai/` at ZIP root). Legacy `omi-seo-ai-bridge-x.y.z.zip` still accepted.
 - Laravel observes/triggers updates; it does not host ZIP packages.
 
 There is no compress_plugin.ps1 and no Laravel Update Server.

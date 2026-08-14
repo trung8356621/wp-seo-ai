@@ -17,7 +17,9 @@ final class GitHub_Release_Client
 
     public const RELEASES_HTML = 'https://github.com/trung8356621/wp-seo-ai/releases';
 
-    public const ASSET_SLUG = 'omi-seo-ai-bridge';
+    public const ASSET_SLUG = 'wp-seo-ai';
+
+    public const LEGACY_ASSET_SLUG = 'omi-seo-ai-bridge';
 
     public const TRANSIENT_KEY = 'omi_seo_github_latest_release';
 
@@ -208,13 +210,16 @@ final class GitHub_Release_Client
             return null;
         }
 
-        $expected = strtolower($this->expected_asset_name($version));
+        $wanted = [
+            strtolower($this->expected_asset_name($version)),
+            strtolower(self::LEGACY_ASSET_SLUG.'-'.$version.'.zip'),
+        ];
         foreach ($assets as $asset) {
             if (! is_array($asset)) {
                 continue;
             }
             $name = strtolower(trim((string) ($asset['name'] ?? '')));
-            if ($name === $expected) {
+            if (in_array($name, $wanted, true)) {
                 return $asset;
             }
         }
@@ -256,7 +261,7 @@ final class GitHub_Release_Client
             'timeout' => 15,
             'headers' => [
                 'Accept' => 'application/vnd.github+json',
-                'User-Agent' => 'omi-seo-ai-bridge',
+                'User-Agent' => 'wp-seo-ai',
             ],
         ]);
 

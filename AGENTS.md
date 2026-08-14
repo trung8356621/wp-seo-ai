@@ -55,7 +55,7 @@
 
 - This repo currently has no `composer.json`, `package.json`, or `phpunit.xml`; do not invent test/build commands.
 - For source changes, inspect syntax-sensitive PHP around changed methods and recommend a WP/PHP syntax check only when available in the user's environment.
-- Plugin packaging is manual ZIP uploaded to GitHub Releases (`omi-seo-ai-bridge-x.y.z.zip`). Do not host packages on Laravel.
+- Plugin packaging is manual ZIP uploaded to GitHub Releases (`wp-seo-ai-x.y.z.zip`, folder `wp-seo-ai/`). Do not host packages on Laravel.
 - For contract changes, also use backend verification guidance in `..\omnichannel-backend\AGENTS.md`.
 
 ## Skills

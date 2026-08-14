@@ -36,7 +36,9 @@ final class Plugin_Updater
 
         add_filter('pre_set_site_transient_update_plugins', [$updater, 'check_for_update']);
         add_filter('plugins_api', [$updater, 'get_plugin_info'], 20, 3);
+        add_filter('upgrader_source_selection', [$updater, 'force_canonical_source_dir'], 10, 4);
         add_action('upgrader_process_complete', [$updater, 'clear_update_cache_after_upgrade'], 10, 2);
+        add_action('admin_init', [$updater, 'deactivate_legacy_folder']);
     }
 
     /**
@@ -183,6 +185,72 @@ final class Plugin_Updater
         }
 
         return $info;
+    }
+
+    /**
+     * Keep the extracted ZIP folder aligned with the installed plugin directory.
+     *
+     * @param  mixed  $source
+     * @param  mixed  $remote_source
+     * @param  mixed  $upgrader
+     * @param  array<string, mixed>  $hook_extra
+     * @return mixed
+     */
+    public function force_canonical_source_dir($source, $remote_source, $upgrader, $hook_extra = [])
+    {
+        unset($upgrader);
+
+        if (! is_string($source) || $source === '' || ! is_readable(rtrim($source, '/\\').DIRECTORY_SEPARATOR.'omi-seo-ai-bridge.php')) {
+            return $source;
+        }
+
+        $desired = $this->plugin_slug;
+        if ($desired === '.' || $desired === '\\' || $desired === '') {
+            $desired = 'wp-seo-ai';
+        }
+
+        $normalized = rtrim(str_replace('\\', '/', $source), '/');
+        if (basename($normalized) === $desired) {
+            return $source;
+        }
+
+        $parent = is_string($remote_source) && $remote_source !== ''
+            ? rtrim(str_replace('\\', '/', $remote_source), '/')
+            : dirname($normalized);
+        $target = $parent.'/'.$desired;
+
+        if (function_exists('move_dir')) {
+            $moved = move_dir($source, $target, true);
+            if (! is_wp_error($moved)) {
+                return $target;
+            }
+        }
+
+        if (@rename($source, $target)) {
+            return $target;
+        }
+
+        unset($hook_extra);
+
+        return $source;
+    }
+
+    public function deactivate_legacy_folder(): void
+    {
+        if (! function_exists('deactivate_plugins') || ! function_exists('is_plugin_active')) {
+            return;
+        }
+
+        if (dirname($this->plugin_basename) !== 'wp-seo-ai') {
+            return;
+        }
+
+        $legacy = 'omi-seo-ai-bridge/omi-seo-ai-bridge.php';
+        if ($this->plugin_basename === $legacy || ! is_plugin_active($legacy)) {
+            return;
+        }
+
+        deactivate_plugins($legacy, true);
     }
 
     /**
