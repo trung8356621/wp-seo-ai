@@ -50,6 +50,7 @@ final class Site_Sync_V2_Provider
             'since' => $since,
             'offset' => $this->cursor_offset($cursor),
             'run_token' => isset($args['run_token']) ? (string) $args['run_token'] : null,
+            'fields' => (string) ($args['fields'] ?? 'metadata'),
         ]);
     }
 
@@ -79,6 +80,7 @@ final class Site_Sync_V2_Provider
                 : $this->cursor_offset($cursor),
             'run_token' => isset($args['run_token']) ? (string) $args['run_token'] : null,
             'include_unchanged' => $forceFull,
+            'fields' => (string) ($args['fields'] ?? 'metadata'),
         ]);
     }
 
@@ -100,8 +102,9 @@ final class Site_Sync_V2_Provider
             return [];
         }
 
-        $contentHash = $this->content_hash($post, $mapped);
+        $contentHash = $this->content_only_hash($post);
         $mapped['content_hash'] = $contentHash;
+        $mapped['seo_meta_hash'] = $this->seo_meta_hash($mapped);
 
         $seo = is_array($mapped['seo'] ?? null) ? $mapped['seo'] : [];
         $keywords = [];
@@ -139,13 +142,14 @@ final class Site_Sync_V2_Provider
     }
 
     /**
-     * @param  array{mode: string, since: ?string, offset: int, run_token: ?string, include_unchanged?: bool}  $opts
+     * @param  array{mode: string, since: ?string, offset: int, run_token: ?string, include_unchanged?: bool, fields?: string}  $opts
      * @return array<string, mixed>
      */
     private function collect_batch(array $opts): array
     {
         $offset = max(0, (int) $opts['offset']);
         $forceFull = ($opts['mode'] ?? '') === 'force_full' || ! empty($opts['include_unchanged']);
+        $metadataOnly = ($opts['fields'] ?? 'metadata') !== 'full';
         $queryArgs = [
             'post_type' => ['post', 'page', 'product'],
             'post_status' => ['publish', 'draft', 'pending', 'private', 'future'],
@@ -179,14 +183,19 @@ final class Site_Sync_V2_Provider
             if (Sync_Provider::is_sync_excluded_post((int) $post->ID)) {
                 continue;
             }
-            $mapped = $provider->map_post_by_id((int) $post->ID);
+            $mapped = $metadataOnly
+                ? $provider->map_post_index_by_id((int) $post->ID)
+                : $provider->map_post_by_id((int) $post->ID);
             if (! is_array($mapped)) {
                 continue;
             }
-            $mapped['content_hash'] = $this->content_hash($post, $mapped);
+            $mapped['content_hash'] = $this->content_only_hash($post);
+            $mapped['seo_meta_hash'] = $this->seo_meta_hash($mapped);
             $articles[] = $mapped;
-            foreach (Link_Catalog_Extractor::from_post($post) as $link) {
-                $links[] = $link;
+            if (! $metadataOnly) {
+                foreach (Link_Catalog_Extractor::from_post($post) as $link) {
+                    $links[] = $link;
+                }
             }
             $seo = is_array($mapped['seo'] ?? null) ? $mapped['seo'] : [];
             $focus = trim((string) ($seo['focus_keyword'] ?? ''));
@@ -222,6 +231,7 @@ final class Site_Sync_V2_Provider
             'total_count' => $totalCount,
             'include_unchanged' => $forceFull,
             'profile' => null,
+            'fields' => $metadataOnly ? 'metadata' : 'full',
             'articles' => $articles,
             'links' => $links,
             'provider_keywords' => $keywords,
@@ -232,21 +242,43 @@ final class Site_Sync_V2_Provider
     }
 
     /**
+     * Content identity hash — comparable with lightweight_manifest.
+     */
+    private function content_only_hash(\WP_Post $post): string
+    {
+        $raw = (string) $post->post_content.'|'.(string) $post->post_title.'|'.(string) $post->post_excerpt;
+
+        return hash('sha256', $raw);
+    }
+
+    /**
+     * @param  array<string, mixed>  $mapped
+     */
+    private function seo_meta_hash(array $mapped): string
+    {
+        $seo = is_array($mapped['seo'] ?? null) ? $mapped['seo'] : [];
+        $robots = is_array($seo['robots'] ?? null) ? $seo['robots'] : [];
+
+        return hash('sha256', implode('|', [
+            (string) ($seo['seo_title'] ?? ''),
+            (string) ($seo['meta_description'] ?? ''),
+            (string) ($seo['focus_keyword'] ?? ''),
+            (string) ($seo['canonical'] ?? $seo['canonical_url'] ?? ''),
+            ($robots['index'] ?? true) ? '1' : '0',
+            ($robots['follow'] ?? true) ? '1' : '0',
+            (string) ($seo['schema_type'] ?? ''),
+            (string) ($seo['plugin'] ?? ''),
+        ]));
+    }
+
+    /**
+     * @deprecated Combined hash — prefer content_only_hash + seo_meta_hash.
+     *
      * @param  array<string, mixed>  $mapped
      */
     private function content_hash(\WP_Post $post, array $mapped): string
     {
-        $seo = is_array($mapped['seo'] ?? null) ? $mapped['seo'] : [];
-
-        return hash('sha256', implode('|', [
-            (string) $post->ID,
-            (string) $post->post_modified_gmt,
-            (string) $post->post_title,
-            (string) $post->post_content,
-            (string) ($seo['seo_title'] ?? ''),
-            (string) ($seo['meta_description'] ?? ''),
-            (string) ($seo['focus_keyword'] ?? ''),
-        ]));
+        return hash('sha256', $this->content_only_hash($post).'|'.$this->seo_meta_hash($mapped));
     }
 
     /**
@@ -373,6 +405,7 @@ final class Site_Sync_V2_Provider
             }
             // Preview/reconcile hash: content checksum only — avoid full item_for_post (too slow).
             $raw = (string) $post->post_content.'|'.(string) $post->post_title.'|'.(string) $post->post_excerpt;
+            $seo = Seo_Plugin_Resolver::for_post($postId);
             $entries[] = [
                 'wordpress_id' => $postId,
                 'modified_at' => gmdate('c', strtotime((string) $post->post_modified_gmt) ?: time()),
@@ -380,7 +413,7 @@ final class Site_Sync_V2_Provider
                 'post_type' => (string) $post->post_type,
                 'type' => $post->post_type === 'product' ? 'product' : 'article',
                 'content_hash' => hash('sha256', $raw),
-                'seo_meta_hash' => '',
+                'seo_meta_hash' => $this->seo_meta_hash(['seo' => $seo]),
                 'link_hash' => '',
                 'taxonomy_hash' => '',
             ];

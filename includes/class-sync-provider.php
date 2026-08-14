@@ -347,6 +347,67 @@ final class Sync_Provider
     }
 
     /**
+     * Identity + SEO snapshot only — no post_content / scoring.body / image extract.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function map_post_index_by_id(int $postId): ?array
+    {
+        if (self::is_sync_excluded_post($postId)) {
+            return null;
+        }
+
+        $post = get_post($postId);
+        if (! $post instanceof \WP_Post) {
+            return null;
+        }
+
+        $seoType = $post->post_type === 'product' ? 'product' : 'article';
+
+        return $this->map_post_index($post, $seoType, (string) $post->post_type);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function map_post_index(\WP_Post $post, string $seoType, string $wpPostType): array
+    {
+        $seo = Seo_Plugin_Resolver::for_post((int) $post->ID);
+        $featuredImageUrl = '';
+        $thumbId = (int) get_post_thumbnail_id($post);
+        if ($thumbId > 0) {
+            $featuredImageUrl = (string) wp_get_attachment_image_url($thumbId, 'medium');
+        }
+
+        return [
+            'wp_id' => (int) $post->ID,
+            'type' => $seoType,
+            'wp_post_type' => $wpPostType,
+            'wp_entity' => 'post',
+            'title' => (string) get_the_title($post),
+            'slug' => (string) $post->post_name,
+            'permalink' => $this->resolve_post_permalink($post),
+            'status' => (string) $post->post_status,
+            'post_date' => (string) $post->post_date,
+            'post_modified' => (string) $post->post_modified,
+            'published_at' => $post->post_status === 'publish'
+                ? get_post_time('c', true, $post)
+                : null,
+            'featured_image_url' => $featuredImageUrl,
+            'category_ids' => $this->resolve_post_category_ids($post),
+            'seo' => $seo,
+            'scoring' => [
+                'body' => '',
+                'slug' => (string) $post->post_name,
+                'seo_title' => (string) ($seo['seo_title'] ?? ''),
+                'meta_description' => (string) ($seo['meta_description'] ?? ''),
+                'focus_keyword' => (string) ($seo['focus_keyword'] ?? ''),
+            ],
+            'multilingual' => Polylang_Sync::multilingual_field_for_post((int) $post->ID),
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function map_term(\WP_Term $term, string $taxonomy, string $seoType): array

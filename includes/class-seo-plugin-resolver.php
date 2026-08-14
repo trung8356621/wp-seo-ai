@@ -219,7 +219,7 @@ final class Seo_Plugin_Resolver
             if ($payload['seo_title'] !== '' || $payload['meta_description'] !== '' || $payload['focus_keyword'] !== '') {
                 $payload['plugin'] = 'rank_math';
 
-                return $payload;
+                return self::enrich_canonical_contract($payload, $postId);
             }
         }
 
@@ -228,16 +228,16 @@ final class Seo_Plugin_Resolver
             if ($payload['seo_title'] !== '' || $payload['meta_description'] !== '' || $payload['focus_keyword'] !== '') {
                 $payload['plugin'] = 'yoast';
 
-                return $payload;
+                return self::enrich_canonical_contract($payload, $postId);
             }
         }
 
-        return [
+        return self::enrich_canonical_contract([
             'plugin'           => 'none',
             'seo_title'        => (string) get_the_title($post),
             'meta_description' => self::fallback_excerpt($post),
             'focus_keyword'    => '',
-        ];
+        ], $postId);
     }
 
     /**
@@ -625,6 +625,53 @@ final class Seo_Plugin_Resolver
             'seo_title'        => '',
             'meta_description' => '',
             'focus_keyword'    => '',
+            'canonical'        => '',
+            'schema_type'      => '',
+            'robots'           => [
+                'index' => true,
+                'follow' => true,
+            ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private static function enrich_canonical_contract(array $payload, int $postId): array
+    {
+        $canonical = self::meta_value($postId, [
+            'rank_math_canonical_url',
+            '_rank_math_canonical_url',
+            '_yoast_wpseo_canonical',
+        ]);
+        $robotsMeta = get_post_meta($postId, 'rank_math_robots', true);
+        $index = true;
+        $follow = true;
+        if (is_array($robotsMeta)) {
+            $index = ! in_array('noindex', $robotsMeta, true);
+            $follow = ! in_array('nofollow', $robotsMeta, true);
+        } else {
+            $yoastNoindex = self::meta_value($postId, ['_yoast_wpseo_meta-robots-noindex']);
+            $yoastNofollow = self::meta_value($postId, ['_yoast_wpseo_meta-robots-nofollow']);
+            if ($yoastNoindex === '1') {
+                $index = false;
+            }
+            if ($yoastNofollow === '1') {
+                $follow = false;
+            }
+        }
+
+        $payload['canonical'] = $canonical;
+        $payload['schema_type'] = self::meta_value($postId, [
+            'rank_math_rich_snippet',
+            '_yoast_wpseo_schema_page_type',
+        ]);
+        $payload['robots'] = [
+            'index' => $index,
+            'follow' => $follow,
+        ];
+
+        return $payload;
     }
 }

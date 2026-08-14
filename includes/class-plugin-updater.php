@@ -9,7 +9,9 @@ if (! defined('ABSPATH')) {
 }
 
 /**
- * Kiểm tra và cài đặt bản cập nhật từ Laravel Update Server.
+ * WP native update discovery.
+ * Primary: GitHub Release asset. Fallback: legacy Laravel update-check (old sites).
+ * Does not enable unattended auto-updates.
  */
 final class Plugin_Updater
 {
@@ -37,9 +39,6 @@ final class Plugin_Updater
     public static function boot(string $plugin_file): void
     {
         $updater = new self($plugin_file);
-        if ($updater->update_url === '') {
-            return;
-        }
 
         add_filter('pre_set_site_transient_update_plugins', [$updater, 'check_for_update']);
         add_filter('plugins_api', [$updater, 'get_plugin_info'], 20, 3);
@@ -224,6 +223,23 @@ final class Plugin_Updater
      */
     private function fetch_remote_metadata(): ?array
     {
+        $github = (new Bridge_Update_Service())->wordpress_update_metadata();
+        if (is_array($github) && trim((string) ($github['download_url'] ?? '')) !== '') {
+            return $github;
+        }
+
+        return $this->fetch_legacy_laravel_metadata();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetch_legacy_laravel_metadata(): ?array
+    {
+        if ($this->update_url === '') {
+            return null;
+        }
+
         $response = wp_remote_get($this->update_url, [
             'timeout' => 15,
             'headers' => [

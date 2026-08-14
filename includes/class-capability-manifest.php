@@ -70,6 +70,55 @@ final class Capability_Manifest
             $capabilities['seo_metadata'] = ['available' => false, 'provider' => null];
         }
 
+        $localEngine = [
+            'content_manifest' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+            'metadata_only_articles' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+            'heartbeat' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+            'cache_purge' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+            'link_health_batch' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+            'broken_links_v2' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+            'link_graph' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+            'operation_idempotency' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+            'plugin_update' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+                'source' => 'github_release',
+            ],
+            'github_release_update' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+            'manual_update' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+            ],
+        ];
+        $capabilities = array_merge($capabilities, $localEngine);
+
         return [
             'schema' => self::SCHEMA,
             'site_url' => home_url('/'),

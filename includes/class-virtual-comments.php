@@ -208,43 +208,11 @@ final class Virtual_Comments
             self::$pendingWcTransientFlush[] = $postId;
         }
 
-        self::purge_page_caches_for_post($postId);
-
         return [
             'success' => true,
             'count'   => count($normalized),
             'message' => 'Virtual comments saved.',
         ];
-    }
-
-    /**
-     * WP Rocket / LiteSpeed thường cache HTML "There are no reviews yet".
-     */
-    private static function purge_page_caches_for_post(int $postId): void
-    {
-        $postId = (int) $postId;
-        if ($postId <= 0) {
-            return;
-        }
-
-        $url = get_permalink($postId);
-        if (! is_string($url) || $url === '') {
-            return;
-        }
-
-        if (function_exists('rocket_clean_post')) {
-            rocket_clean_post($postId);
-        } elseif (function_exists('rocket_clean_files')) {
-            rocket_clean_files($url);
-        }
-
-        if (class_exists('\\LiteSpeed\\Purge')) {
-            do_action('litespeed_purge_post', $postId);
-        }
-
-        if (function_exists('wp_cache_post_change')) {
-            wp_cache_post_change($postId);
-        }
     }
 
     /**

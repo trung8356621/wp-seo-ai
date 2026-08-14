@@ -60,6 +60,30 @@ final class Rest_Controller
             'permission_callback' => [self::class, 'authorize'],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/heartbeat', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_heartbeat'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/plugin-update/check', [
+            'methods'             => WP_REST_Server::READABLE | WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_plugin_update_check'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/plugin-update/install', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_plugin_update_install'],
+            'permission_callback' => [self::class, 'authorize_write'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/link-health/batch', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_link_health_batch'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/sync/v2/profile', [
             'methods'             => WP_REST_Server::READABLE,
             'callback'            => [self::class, 'handle_sync_v2_profile'],
@@ -421,8 +445,17 @@ final class Rest_Controller
         }
 
         $status = ($result['success'] ?? false) ? 200 : 422;
+        $parentId = 0;
+        $attachment = get_post($attachmentId);
+        if ($attachment instanceof \WP_Post) {
+            $parentId = (int) $attachment->post_parent;
+        }
 
-        return new WP_REST_Response($result, $status);
+        return self::finish_post_write(
+            new WP_REST_Response($result, $status),
+            $parentId,
+            ['source' => 'replace-binary'],
+        );
     }
 
     public static function handle_import_attachment(WP_REST_Request $request): WP_REST_Response
@@ -590,13 +623,15 @@ final class Rest_Controller
             ], 422);
         }
 
-        return new WP_REST_Response([
+        $parentId = (int) $post->post_parent;
+
+        return self::finish_post_write(new WP_REST_Response([
             'success' => true,
             'message' => 'Đã xóa attachment trên WordPress.',
             'attachment_id' => $attachmentId,
             'url' => is_string($url) ? $url : '',
             'slug' => $slug,
-        ], 200);
+        ], 200), $parentId, ['source' => 'delete-attachment']);
     }
 
     /**
@@ -732,16 +767,23 @@ final class Rest_Controller
 
         $renamedCount = count($result['renamed']);
         $errorCount = count($result['errors']);
+        $postsUpdated = (int) ($result['posts_updated'] ?? 0);
 
-        return new WP_REST_Response([
+        $response = new WP_REST_Response([
             'success' => $renamedCount > 0 || ($renamedCount === 0 && $errorCount === 0),
             'mode' => $mode,
             'renamed_count' => $renamedCount,
             'error_count' => $errorCount,
-            'posts_updated' => (int) ($result['posts_updated'] ?? 0),
+            'posts_updated' => $postsUpdated,
             'renamed' => $result['renamed'],
             'errors' => $result['errors'],
         ], $errorCount > 0 && $renamedCount === 0 ? 422 : 200);
+
+        if ($postsUpdated > 0) {
+            return self::finish_global_write($response, ['source' => 'attachments-rename']);
+        }
+
+        return $response;
     }
 
     public static function handle_update_attachment_meta(WP_REST_Request $request): WP_REST_Response
@@ -860,11 +902,11 @@ final class Rest_Controller
             delete_post_meta($postId, '_omi_seo_ai_skip_push');
         }
 
-        return new WP_REST_Response([
+        return self::finish_post_write(new WP_REST_Response([
             'success' => true,
             'wp_post_id' => $postId,
             'faq_count' => count($normalized),
-        ], 200);
+        ], 200), $postId, ['source' => 'seo-faq']);
     }
 
     public static function handle_editor_sync(WP_REST_Request $request): WP_REST_Response
@@ -1123,7 +1165,12 @@ final class Rest_Controller
             $response['seo_error'] = $seoError;
         }
 
-        return new WP_REST_Response($response, 200);
+        $context = ['source' => 'editor-sync'];
+        if ($postTypeChanged && $oldPermalink !== '' && $oldPermalink !== $newPermalink) {
+            $context['extra_urls'] = [$oldPermalink];
+        }
+
+        return self::finish_post_write(new WP_REST_Response($response, 200), $postId, $context);
     }
 
     private static function normalize_post_date($value): string
@@ -1293,6 +1340,17 @@ final class Rest_Controller
             ], 422);
         }
 
+        $operationId = trim((string) ($body['operation_id'] ?? $body['publish_operation_key'] ?? $body['_omi_publish_operation_key'] ?? ''));
+        if ($operationId !== '') {
+            $replay = Operation_Store::lookup($operationId);
+            if (is_array($replay)) {
+                return new WP_REST_Response(array_merge([
+                    'success' => true,
+                    'message' => 'Operation already processed.',
+                ], $replay), 200);
+            }
+        }
+
         $postType = sanitize_key((string) ($body['post_type'] ?? 'post'));
         if (! in_array($postType, ['post', 'product'], true) || ! post_type_exists($postType)) {
             return new WP_REST_Response([
@@ -1359,7 +1417,7 @@ final class Rest_Controller
             ? (int) $body['teamvia_article_id']
             : (isset($body['_teamvia_article_id']) ? (int) $body['_teamvia_article_id'] : 0);
         $syncKeyMeta = trim((string) ($body['teamvia_sync_key'] ?? $body['_teamvia_sync_key'] ?? ''));
-        $operationKeyMeta = trim((string) ($body['publish_operation_key'] ?? $body['_omi_publish_operation_key'] ?? ''));
+        $operationKeyMeta = trim((string) ($body['operation_id'] ?? $body['publish_operation_key'] ?? $body['_omi_publish_operation_key'] ?? ''));
         if ($articleIdMeta > 0) {
             update_post_meta($postId, '_teamvia_article_id', $articleIdMeta);
         }
@@ -1367,7 +1425,7 @@ final class Rest_Controller
             update_post_meta($postId, '_teamvia_sync_key', $syncKeyMeta);
         }
         if ($operationKeyMeta !== '') {
-            update_post_meta($postId, '_omi_publish_operation_key', $operationKeyMeta);
+            Operation_Store::remember($operationKeyMeta, $postId);
         }
 
         if ($status === 'publish') {
@@ -1395,7 +1453,7 @@ final class Rest_Controller
             $message .= ' Đã áp SEO meta.';
         }
 
-        return new WP_REST_Response([
+        return self::finish_post_write(new WP_REST_Response([
             'success' => true,
             'message' => $message,
             'wp_post_id' => $postId,
@@ -1406,7 +1464,7 @@ final class Rest_Controller
             'post_modified' => (string) get_post_field('post_modified', $postId),
             'faq_count' => $faqCount,
             'seo_applied' => $seoApplied,
-        ], 201);
+        ], 201), $postId, ['source' => 'create-post']);
     }
 
     public static function handle_find_post_by_article(WP_REST_Request $request): WP_REST_Response
@@ -1651,13 +1709,13 @@ final class Rest_Controller
 
         $count = (int) ($virtualResult['count'] ?? 0);
 
-        return new WP_REST_Response([
+        return self::finish_post_write(new WP_REST_Response([
             'success' => true,
             'message' => 'Virtual comments saved.',
             'wp_post_id' => $postId,
             'virtual_count' => $count,
             'count' => $count,
-        ], 200);
+        ], 200), $postId, ['source' => 'virtual-comments']);
     }
 
     /**
@@ -1745,9 +1803,10 @@ final class Rest_Controller
         $result = Virtual_Comments::save_for_post($postId, $items);
         $postType = (string) $post->post_type;
         $count = (int) ($result['count'] ?? 0);
+        $saved = (bool) ($result['success'] ?? false);
 
-        return new WP_REST_Response([
-            'success' => (bool) ($result['success'] ?? false) && $count > 0,
+        $response = new WP_REST_Response([
+            'success' => $saved && $count > 0,
             'wp_post_id' => $postId,
             'wp_post_type' => $postType,
             'created_count' => $count,
@@ -1767,6 +1826,12 @@ final class Rest_Controller
                 'message' => (string) ($result['message'] ?? 'No valid virtual comments.'),
             ]],
         ], $count > 0 ? 200 : 422);
+
+        if ($saved) {
+            Cache_Purger::purge_post($postId, ['source' => 'comment-reviews']);
+        }
+
+        return $response;
     }
 
     public static function handle_get_comment_reviews(WP_REST_Request $request): WP_REST_Response
@@ -2022,16 +2087,22 @@ final class Rest_Controller
             $seoApplied = Seo_Plugin_Resolver::apply_to_term($termId, $body['seo']);
         }
 
-        return new WP_REST_Response([
+        $permalink = Permalink_Resolver::for_term($term);
+
+        return self::finish_url_write(new WP_REST_Response([
             'success' => true,
             'message' => 'Đã đồng bộ danh mục từ SEO editor.',
             'wp_post_id' => $termId,
             'taxonomy' => $taxonomy,
             'slug' => (string) $term->slug,
-            'permalink' => Permalink_Resolver::for_term($term),
+            'permalink' => $permalink,
             'faq_count' => $faqCount,
             'seo_applied' => $seoApplied,
-        ], 200);
+        ], 200), $permalink, [
+            'source'   => 'term-editor-sync',
+            'term_id'  => $termId,
+            'taxonomy' => $taxonomy,
+        ]);
     }
 
     public static function handle_term(WP_REST_Request $request): WP_REST_Response
@@ -2161,14 +2232,14 @@ final class Rest_Controller
 
         $mapped = (new Sync_Provider())->map_post_by_id($postId);
 
-        return new WP_REST_Response([
+        return self::finish_post_write(new WP_REST_Response([
             'success' => true,
             'message' => 'Đã cập nhật media.',
             'featured_image_url' => (string) ($mapped['featured_image_url'] ?? ''),
             'product_gallery' => is_array($mapped['product_gallery'] ?? null)
                 ? $mapped['product_gallery']
                 : [],
-        ], 200);
+        ], 200), $postId, ['source' => 'post-media']);
     }
 
     public static function handle_term_media(WP_REST_Request $request): WP_REST_Response
@@ -2194,13 +2265,18 @@ final class Rest_Controller
         }
 
         $mapped = (new Sync_Provider())->map_term_by_id($taxonomy, $termId);
+        $permalink = Permalink_Resolver::for_term($term);
 
-        return new WP_REST_Response([
+        return self::finish_url_write(new WP_REST_Response([
             'success' => true,
             'message' => 'Đã cập nhật ảnh danh mục.',
             'featured_image_url' => (string) ($mapped['featured_image_url'] ?? ''),
             'product_gallery' => [],
-        ], 200);
+        ], 200), $permalink, [
+            'source'   => 'term-media',
+            'term_id'  => $termId,
+            'taxonomy' => $taxonomy,
+        ]);
     }
 
     public static function handle_post(WP_REST_Request $request): WP_REST_Response
@@ -2283,6 +2359,81 @@ final class Rest_Controller
         ], 200);
     }
 
+    public static function handle_heartbeat(WP_REST_Request $request): WP_REST_Response
+    {
+        unset($request);
+
+        $manifest = Capability_Manifest::build();
+        $rawCaps = is_array($manifest['capabilities'] ?? null) ? $manifest['capabilities'] : [];
+        $flags = [];
+        foreach ([
+            'content_manifest',
+            'metadata_only_articles',
+            'link_graph',
+            'broken_links_v2',
+            'link_health_batch',
+            'cache_purge',
+            'seo_metadata',
+            'heartbeat',
+            'operation_idempotency',
+            'plugin_update',
+            'github_release_update',
+            'manual_update',
+        ] as $key) {
+            $flags[$key] = (bool) ($rawCaps[$key]['available'] ?? false);
+        }
+
+        $info = Seo_Plugin_Resolver::site_info();
+
+        return new WP_REST_Response([
+            'success' => true,
+            'status' => 'ok',
+            'plugin_version' => defined('OMI_SEO_AI_BRIDGE_VERSION') ? (string) OMI_SEO_AI_BRIDGE_VERSION : '',
+            'wp_version' => (string) ($info['wordpress_version'] ?? get_bloginfo('version')),
+            'capabilities' => $flags,
+            'plugin_update_source' => 'github_release',
+        ], 200);
+    }
+
+    public static function handle_plugin_update_check(WP_REST_Request $request): WP_REST_Response
+    {
+        $force = filter_var($request->get_param('force_refresh') ?? true, FILTER_VALIDATE_BOOLEAN);
+        $service = new Bridge_Update_Service();
+        $payload = $service->check($force);
+
+        return new WP_REST_Response($payload, 200);
+    }
+
+    public static function handle_plugin_update_install(WP_REST_Request $request): WP_REST_Response
+    {
+        $params = $request->get_json_params();
+        if (! is_array($params)) {
+            $params = [];
+        }
+        $operationId = trim((string) ($params['operation_id'] ?? $request->get_param('operation_id') ?? ''));
+        $service = new Bridge_Update_Service();
+        $payload = $service->install($operationId);
+
+        return new WP_REST_Response($payload, 200);
+    }
+
+    public static function handle_link_health_batch(WP_REST_Request $request): WP_REST_Response
+    {
+        $params = $request->get_json_params();
+        if (! is_array($params)) {
+            $params = [];
+        }
+        $cursor = (int) ($params['cursor'] ?? $request->get_param('cursor') ?? 0);
+        $limit = (int) ($params['limit'] ?? $request->get_param('limit') ?? Link_Health_Engine::BATCH_SIZE);
+        $engine = new Link_Health_Engine();
+
+        return new WP_REST_Response([
+            'success' => true,
+            'message' => 'Link health batch.',
+            'batch' => $engine->process_batch($cursor, $limit),
+        ], 200);
+    }
+
     public static function handle_sync_v2_profile(WP_REST_Request $request): WP_REST_Response
     {
         unset($request);
@@ -2302,6 +2453,7 @@ final class Rest_Controller
             'cursor' => (string) $request->get_param('cursor'),
             'run_token' => (string) $request->get_param('run_token'),
             'mode' => 'delta',
+            'fields' => (string) ($request->get_param('fields') ?: 'metadata'),
         ]);
 
         return new WP_REST_Response([
@@ -2325,6 +2477,7 @@ final class Rest_Controller
                 'run_token' => (string) ($params['run_token'] ?? $request->get_param('run_token') ?? ''),
                 'mode' => (string) ($params['mode'] ?? 'snapshot'),
                 'include_unchanged' => (bool) ($params['include_unchanged'] ?? false),
+                'fields' => (string) ($params['fields'] ?? $request->get_param('fields') ?? 'metadata'),
             ]);
 
             return new WP_REST_Response([
@@ -2488,5 +2641,49 @@ final class Rest_Controller
         }
 
         return '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private static function finish_post_write(WP_REST_Response $response, int $postId, array $context = []): WP_REST_Response
+    {
+        Cache_Purger::after_rest_success(
+            $response->get_status(),
+            $response->get_data(),
+            $postId,
+            $context,
+        );
+
+        return $response;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private static function finish_url_write(WP_REST_Response $response, string $url, array $context = []): WP_REST_Response
+    {
+        Cache_Purger::after_rest_success_url(
+            $response->get_status(),
+            $response->get_data(),
+            $url,
+            $context,
+        );
+
+        return $response;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private static function finish_global_write(WP_REST_Response $response, array $context = []): WP_REST_Response
+    {
+        Cache_Purger::after_rest_success_all(
+            $response->get_status(),
+            $response->get_data(),
+            $context,
+        );
+
+        return $response;
     }
 }
