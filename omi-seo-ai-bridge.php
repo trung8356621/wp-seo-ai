@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.79
+ * Version:           1.0.80
  * Author:            TVH
  */
 
@@ -12,14 +12,10 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-if (
-    defined('OMI_SEO_AI_BRIDGE_LOADED')
-    || defined('OMI_SEO_AI_BRIDGE_VERSION')
-    || function_exists('omi_seo_ai_bridge_render_admin_page')
-) {
+if (defined('OMI_SEO_AI_BRIDGE_LOADED')) {
     $thisBasename = plugin_basename(__FILE__);
     $loadedBasename = defined('OMI_SEO_AI_BRIDGE_BASENAME') ? (string) OMI_SEO_AI_BRIDGE_BASENAME : '';
-    if ($loadedBasename === '' || $loadedBasename === $thisBasename) {
+    if (! function_exists('omi_seo_ai_bridge_render_admin_page') || $loadedBasename === '' || $loadedBasename === $thisBasename) {
         return;
     }
 
@@ -45,7 +41,7 @@ if (
 }
 
 define('OMI_SEO_AI_BRIDGE_LOADED', true);
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.79');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.80');
 define('OMI_SEO_AI_BRIDGE_SLUG', 'wp-seo-ai');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
@@ -130,9 +126,9 @@ add_action('admin_menu', static function (): void {
         'omi-seo-ai',
         'omi_seo_ai_bridge_render_admin_page',
         'dashicons-networking',
-        999
+        58
     );
-}, 999);
+});
 
 add_filter('plugin_action_links_' . OMI_SEO_AI_BRIDGE_BASENAME, static function (array $links): array {
     $settingsUrl = admin_url('admin.php?page=omi-seo-ai&view=settings');
