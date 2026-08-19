@@ -81,7 +81,7 @@ final class Laravel_Push_Sync
             return;
         }
 
-        $supportedTypes = ['post', 'page', 'product'];
+        $supportedTypes = Site_Sync_V2_Provider::syncable_post_type_slugs() ?: ['post', 'page', 'product'];
         if (! in_array($post->post_type, $supportedTypes, true)) {
             return;
         }
@@ -197,7 +197,7 @@ final class Laravel_Push_Sync
             return;
         }
 
-        $supportedTypes = ['post', 'page', 'product'];
+        $supportedTypes = Site_Sync_V2_Provider::syncable_post_type_slugs() ?: ['post', 'page', 'product'];
         if (! in_array($post->post_type, $supportedTypes, true)) {
             return;
         }

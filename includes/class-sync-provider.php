@@ -38,9 +38,15 @@ final class Sync_Provider
         $entries = [];
         $counts = [];
 
-        $this->collect_post_manifest('post', 'article', $entries, $counts);
-        $this->collect_post_manifest('page', 'article', $entries, $counts);
-        $this->collect_product_manifest($entries, $counts);
+        $slugs = Site_Sync_V2_Provider::syncable_post_type_slugs() ?: ['post', 'page', 'product'];
+        foreach ($slugs as $slug) {
+            if ($slug === 'product') {
+                $this->collect_product_manifest($entries, $counts);
+            } else {
+                $seoType = $slug === 'product' ? 'product' : 'article';
+                $this->collect_post_manifest($slug, $seoType, $entries, $counts);
+            }
+        }
         $this->collect_term_manifest('category', 'category', $entries, $counts);
         $this->collect_term_manifest('product_cat', 'product_category', $entries, $counts);
 

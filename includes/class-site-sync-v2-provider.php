@@ -15,6 +15,52 @@ final class Site_Sync_V2_Provider
 {
     public const BATCH_SIZE = 25;
 
+    private const WP_INTERNAL_POST_TYPES = [
+        'revision', 'nav_menu_item', 'attachment', 'custom_css',
+        'customize_changeset', 'oembed_cache', 'user_request',
+        'wp_block', 'wp_template', 'wp_template_part', 'wp_navigation',
+        'wp_font_family', 'wp_font_face', 'wp_global_styles',
+        'wp_pattern',
+    ];
+
+    /**
+     * Public content post types registered on this WordPress installation.
+     *
+     * Includes built-in post/page/product and any public custom post types,
+     * excluding WP internal/system types.
+     *
+     * @return list<array{name: string, label: string, builtin: bool}>
+     */
+    public static function public_content_post_types(): array
+    {
+        $types = get_post_types(['public' => true], 'objects');
+        $result = [];
+        foreach ($types as $pt) {
+            if (in_array($pt->name, self::WP_INTERNAL_POST_TYPES, true)) {
+                continue;
+            }
+            if ($pt->name === 'attachment') {
+                continue;
+            }
+            $result[] = [
+                'name' => (string) $pt->name,
+                'label' => (string) ($pt->label ?: $pt->name),
+                'builtin' => (bool) $pt->_builtin,
+            ];
+        }
+        return $result;
+    }
+
+    /**
+     * Post type slugs to sync (content only, no taxonomies).
+     *
+     * @return list<string>
+     */
+    public static function syncable_post_type_slugs(): array
+    {
+        return array_column(self::public_content_post_types(), 'name');
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -33,6 +79,7 @@ final class Site_Sync_V2_Provider
             'cta_intro' => '',
             'contacts' => $contacts,
             'schema_org' => $this->schema_org_suggest(),
+            'post_types' => self::public_content_post_types(),
         ];
     }
 
@@ -151,7 +198,7 @@ final class Site_Sync_V2_Provider
         $forceFull = ($opts['mode'] ?? '') === 'force_full' || ! empty($opts['include_unchanged']);
         $metadataOnly = ($opts['fields'] ?? 'metadata') !== 'full';
         $queryArgs = [
-            'post_type' => ['post', 'page', 'product'],
+            'post_type' => self::syncable_post_type_slugs() ?: ['post', 'page', 'product'],
             'post_status' => ['publish', 'draft', 'pending', 'private', 'future'],
             'posts_per_page' => self::BATCH_SIZE,
             'offset' => $offset,
@@ -353,9 +400,10 @@ final class Site_Sync_V2_Provider
      */
     public function lightweight_manifest_summary(): array
     {
-        $byType = ['post' => 0, 'page' => 0, 'product' => 0, 'other' => 0];
+        $byType = [];
         $total = 0;
-        foreach (['post', 'page', 'product'] as $postType) {
+        $slugs = self::syncable_post_type_slugs() ?: ['post', 'page', 'product'];
+        foreach ($slugs as $postType) {
             $counts = wp_count_posts($postType);
             if (! is_object($counts)) {
                 continue;
@@ -383,7 +431,7 @@ final class Site_Sync_V2_Provider
     public function lightweight_manifest(): array
     {
         $query = new \WP_Query([
-            'post_type' => ['post', 'page', 'product'],
+            'post_type' => self::syncable_post_type_slugs() ?: ['post', 'page', 'product'],
             'post_status' => ['publish', 'draft', 'pending', 'private', 'future', 'trash'],
             'posts_per_page' => -1,
             'fields' => 'ids',
