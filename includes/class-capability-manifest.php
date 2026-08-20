@@ -35,6 +35,14 @@ final class Capability_Manifest
                 'available' => true,
                 'provider' => 'wordpress',
             ],
+            'taxonomy_catalog_v1' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+                'version' => 1,
+                'schema' => Taxonomy_Catalog::SCHEMA,
+                'taxonomies' => Taxonomy_Catalog::SUPPORTED,
+                'endpoint' => 'GET /omi-seo-ai/v1/taxonomy-catalog/{taxonomy}',
+            ],
             'product_category_taxonomy_export' => [
                 'available' => taxonomy_exists('product_cat'),
                 'provider' => 'wordpress',

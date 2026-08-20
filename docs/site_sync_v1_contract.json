@@ -8,6 +8,7 @@
     "delta": "GET /omi-seo-ai/v1/sync/v2/delta",
     "batches": "POST /omi-seo-ai/v1/sync/v2/batches",
     "taxonomy_terms": "GET /omi-seo-ai/v1/taxonomies/{taxonomy}/terms",
+    "taxonomy_catalog": "GET /omi-seo-ai/v1/taxonomy-catalog/{taxonomy}",
     "snapshot_callback": "POST /api/seo-wp-bridge/snapshot-callback"
   },
   "orchestrator_steps": [
@@ -31,6 +32,7 @@
     "schema",
     "contact_discovery",
     "taxonomy",
+    "taxonomy_catalog_v1",
     "product_category_taxonomy_export",
     "permalink"
   ]

@@ -77,6 +77,7 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-schema-ld-exporter.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-virtual-comments.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-debug.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-cache-purger.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-taxonomy-catalog.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-operation-store.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-github-release-client.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-bridge-update-service.php';
@@ -105,6 +106,7 @@ add_action('rest_api_init', static function (): void {
 });
 
 add_action('init', static function (): void {
+    \OmiSeoAiBridge\Taxonomy_Catalog::register();
     \OmiSeoAiBridge\Laravel_Push_Sync::register();
     \OmiSeoAiBridge\Site_Sync_Outbox::register();
     \OmiSeoAiBridge\Local_Seo_Engine::register();

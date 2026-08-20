@@ -33,6 +33,13 @@ final class Site_Sync_V2_Provider
      */
     public static function public_content_post_types(): array
     {
+        if (! did_action('init')) {
+            return [
+                ['name' => 'post', 'label' => 'Posts', 'builtin' => true],
+                ['name' => 'page', 'label' => 'Pages', 'builtin' => true],
+                ['name' => 'product', 'label' => 'Products', 'builtin' => false],
+            ];
+        }
         $types = get_post_types(['public' => true], 'objects');
         $result = [];
         foreach ($types as $pt) {

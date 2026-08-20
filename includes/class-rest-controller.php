@@ -108,6 +108,19 @@ final class Rest_Controller
             'permission_callback' => [self::class, 'authorize'],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/taxonomy-catalog/(?P<taxonomy>[a-z0-9_-]+)', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_taxonomy_catalog'],
+            'permission_callback' => [self::class, 'authorize'],
+            'args'                => [
+                'taxonomy' => [
+                    'type'              => 'string',
+                    'required'          => true,
+                    'sanitize_callback' => static fn ($value): string => sanitize_key((string) $value),
+                ],
+            ],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/taxonomies/(?P<taxonomy>[a-z0-9_-]+)/terms', [
             'methods'             => WP_REST_Server::READABLE,
             'callback'            => [self::class, 'handle_taxonomy_terms'],
@@ -2175,6 +2188,13 @@ final class Rest_Controller
                 'seo' => is_array($mapped['seo'] ?? null) ? $mapped['seo'] : [],
             ],
         ], 200);
+    }
+
+    public static function handle_taxonomy_catalog(WP_REST_Request $request): WP_REST_Response
+    {
+        $result = Taxonomy_Catalog::rest_payload((string) $request->get_param('taxonomy'));
+
+        return new WP_REST_Response($result['body'], $result['status']);
     }
 
     public static function handle_taxonomy_terms(WP_REST_Request $request): WP_REST_Response
