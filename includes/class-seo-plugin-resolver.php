@@ -69,6 +69,8 @@ final class Seo_Plugin_Resolver
             'wordpress_version' => (string) get_bloginfo('version'),
             'site_url'          => (string) home_url('/'),
             'bridge_version'    => defined('OMI_SEO_AI_BRIDGE_VERSION') ? (string) OMI_SEO_AI_BRIDGE_VERSION : '',
+            // WordPress site locale (WPLANG / get_locale). Used when Polylang is absent.
+            'locale'            => function_exists('get_locale') ? (string) get_locale() : '',
             'permalink'         => self::permalink_settings(),
             'polylang'          => Polylang_Sync::site_info(),
         ];
