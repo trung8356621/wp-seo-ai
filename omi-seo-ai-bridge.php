@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.83
+ * Version:           1.0.84
  * Author:            TVH
  */
 
@@ -68,6 +68,7 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-binary-replacer
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-content-type-map.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-sync-provider.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-capability-manifest.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-post-analysis-service.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-link-catalog-extractor.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-score-exporter.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-site-sync-v2-provider.php';
@@ -111,6 +112,7 @@ add_action('init', static function (): void {
     \OmiSeoAiBridge\Laravel_Push_Sync::register();
     \OmiSeoAiBridge\Site_Sync_Outbox::register();
     \OmiSeoAiBridge\Local_Seo_Engine::register();
+    \OmiSeoAiBridge\Post_Analysis_Service::register();
     \OmiSeoAiBridge\Faq_Shortcode::register();
     \OmiSeoAiBridge\Rank_Math_Faq_Schema::register();
     \OmiSeoAiBridge\Virtual_Comments::register();

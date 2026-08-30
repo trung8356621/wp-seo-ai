@@ -154,22 +154,32 @@ final class Local_Seo_Engine
 
         $wpdb->delete($wpdb->prefix.'omi_seo_link_graph', ['source_post_id' => $postId], ['%d']);
         $existingTargets = [];
-        foreach (Link_Catalog_Extractor::from_post($post) as $link) {
-            $url = trim((string) ($link['url'] ?? $link['href'] ?? ''));
+        $analysis = (new Post_Analysis_Service())->analyze($postId, true);
+        $analysisLinks = is_array($analysis['links'] ?? null) ? $analysis['links'] : [];
+        foreach ($analysisLinks as $link) {
+            if (! is_array($link)) {
+                continue;
+            }
+            $url = trim((string) ($link['url'] ?? ''));
             if ($url === '') {
                 continue;
             }
-            $targetPostId = function_exists('url_to_postid') ? (int) url_to_postid($url) : 0;
-            $internal = $targetPostId > 0 || (($link['type'] ?? '') === 'internal');
-            $meta = is_array($link['meta'] ?? null) ? $link['meta'] : [];
-            $anchor = trim((string) ($meta['anchor_text'] ?? $link['title'] ?? $link['anchor'] ?? ''));
+            $targetPostId = (int) ($link['target_post_id'] ?? 0);
+            $linkType = (string) ($link['link_type'] ?? 'external');
+            // Graph table varchar(16): map internal_unresolved → internal (unresolved flag via null target).
+            $storedType = match ($linkType) {
+                'internal', 'internal_unresolved' => 'internal',
+                'wiki_trust' => 'wiki_trust',
+                default => 'external',
+            };
+            $anchor = trim((string) ($link['anchor_text'] ?? ''));
             $wpdb->insert($wpdb->prefix.'omi_seo_link_graph', [
                 'source_post_id' => $postId,
                 'target_post_id' => $targetPostId > 0 ? $targetPostId : null,
                 'target_url' => mb_substr($url, 0, 500),
                 'anchor' => mb_substr($anchor, 0, 255),
                 'anchor_normalized' => mb_strtolower($anchor),
-                'link_type' => $internal ? 'internal' : 'external',
+                'link_type' => $storedType,
                 'content_hash' => $hash,
                 'indexed_at' => $now,
             ]);

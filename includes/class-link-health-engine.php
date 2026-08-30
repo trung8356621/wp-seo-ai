@@ -47,11 +47,15 @@ final class Link_Health_Engine
                 continue;
             }
 
-            $links = Link_Catalog_Extractor::from_post($post);
+            $analysis = (new Post_Analysis_Service())->analyze((int) $post->ID, true);
+            $analysisLinks = is_array($analysis['links'] ?? null) ? $analysis['links'] : [];
             $resolved = [];
-            foreach ($links as $link) {
+            foreach ($analysisLinks as $link) {
+                if (! is_array($link)) {
+                    continue;
+                }
                 $checked++;
-                $row = $this->classify_link($link, $homeHost);
+                $row = $this->map_analysis_link($link, $homeHost);
                 if (($row['status'] ?? '') === 'broken_candidate') {
                     $broken++;
                 }
@@ -61,8 +65,9 @@ final class Link_Health_Engine
             $items[] = [
                 'wp_post_id' => (int) $post->ID,
                 'post_type' => (string) $post->post_type,
-                'content_hash' => hash('sha256', (string) $post->post_content.'|'.(string) $post->post_title),
+                'content_hash' => (string) ($analysis['content_hash'] ?? Post_Analysis_Service::content_hash($post)),
                 'links' => $resolved,
+                'stats' => is_array($analysis['stats'] ?? null) ? $analysis['stats'] : [],
             ];
         }
 
@@ -84,40 +89,43 @@ final class Link_Health_Engine
     }
 
     /**
+     * Map Post_Analysis_Service link row → link-health batch contract.
+     *
      * @param  array<string, mixed>  $link
      * @return array<string, mixed>
      */
-    private function classify_link(array $link, string $homeHost): array
+    private function map_analysis_link(array $link, string $homeHost): array
     {
-        $url = trim((string) ($link['canonical'] ?? $link['url'] ?? ''));
-        $type = (string) ($link['type'] ?? '');
+        unset($homeHost);
+        $url = trim((string) ($link['url'] ?? ''));
+        $linkType = (string) ($link['link_type'] ?? 'unknown');
+        $targetId = (int) ($link['target_post_id'] ?? 0);
+        $anchor = (string) ($link['anchor_text'] ?? '');
+
         if ($url === '') {
             return [
                 'url' => '',
+                'anchor' => $anchor,
                 'link_type' => 'unknown',
                 'status' => 'broken_candidate',
                 'target_post_id' => 0,
             ];
         }
 
-        $host = (string) (wp_parse_url($url, PHP_URL_HOST) ?? '');
-        $isInternal = $type === 'internal' || ($homeHost !== '' && strcasecmp($host, $homeHost) === 0);
-
-        if (! $isInternal) {
+        if ($linkType === 'wiki_trust' || $linkType === 'external') {
             return [
                 'url' => $url,
-                'anchor' => (string) ($link['anchor'] ?? ''),
-                'link_type' => 'external',
-                'status' => 'external_pending',
+                'anchor' => $anchor,
+                'link_type' => $linkType,
+                'status' => $linkType === 'external' ? 'external_pending' : 'ok',
                 'target_post_id' => 0,
             ];
         }
 
-        $targetId = (int) url_to_postid($url);
-        if ($targetId > 0) {
+        if ($linkType === 'internal' && $targetId > 0) {
             return [
                 'url' => $url,
-                'anchor' => (string) ($link['anchor'] ?? ''),
+                'anchor' => $anchor,
                 'link_type' => 'internal',
                 'status' => 'ok',
                 'target_post_id' => $targetId,
@@ -128,7 +136,7 @@ final class Link_Health_Engine
         if ($path === '/' || $path === '') {
             return [
                 'url' => $url,
-                'anchor' => (string) ($link['anchor'] ?? ''),
+                'anchor' => $anchor,
                 'link_type' => 'internal',
                 'status' => 'ok',
                 'target_post_id' => 0,
@@ -137,7 +145,7 @@ final class Link_Health_Engine
 
         return [
             'url' => $url,
-            'anchor' => (string) ($link['anchor'] ?? ''),
+            'anchor' => $anchor,
             'link_type' => 'internal',
             'status' => 'broken_candidate',
             'target_post_id' => 0,

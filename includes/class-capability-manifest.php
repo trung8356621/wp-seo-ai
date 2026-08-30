@@ -132,6 +132,11 @@ final class Capability_Manifest
                 'available' => true,
                 'provider' => 'omi_bridge',
             ],
+            'post_analysis_debug' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+                'endpoint' => 'GET /omi-seo-ai/v1/debug/post-analysis/{id}',
+            ],
             'post_observe' => [
                 'available' => true,
                 'provider' => 'omi_bridge',

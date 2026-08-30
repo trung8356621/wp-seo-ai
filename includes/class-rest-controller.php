@@ -195,6 +195,24 @@ final class Rest_Controller
             'permission_callback' => [self::class, 'authorize'],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/debug/post-analysis/(?P<id>\d+)', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_debug_post_analysis'],
+            'permission_callback' => [self::class, 'authorize'],
+            'args'                => [
+                'id' => [
+                    'type'              => 'integer',
+                    'required'          => true,
+                    'sanitize_callback' => static fn ($value): int => max(0, (int) $value),
+                ],
+                'refresh' => [
+                    'type'              => 'boolean',
+                    'required'          => false,
+                    'default'           => false,
+                ],
+            ],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/posts', [
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => [self::class, 'handle_create_post'],
@@ -2432,6 +2450,7 @@ final class Rest_Controller
             'manual_update',
             'keyword_dictionary_apply',
             'link_analysis_batch',
+            'post_analysis_debug',
             'post_observe',
         ] as $key) {
             $flags[$key] = (bool) ($rawCaps[$key]['available'] ?? false);
@@ -2527,6 +2546,34 @@ final class Rest_Controller
             'success' => true,
             'message' => 'Link analysis batch.',
             'batch' => $engine->process_batch($cursor, $limit),
+        ], 200);
+    }
+
+    public static function handle_debug_post_analysis(WP_REST_Request $request): WP_REST_Response
+    {
+        $postId = (int) $request->get_param('id');
+        if ($postId <= 0) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Invalid post id.',
+            ], 400);
+        }
+
+        $refresh = filter_var($request->get_param('refresh') ?? false, FILTER_VALIDATE_BOOLEAN);
+        $service = new Post_Analysis_Service();
+        $analysis = $service->analyze($postId, ! $refresh);
+        if ($analysis === null) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'Post not found or unsupported post type/status.',
+                'post_id' => $postId,
+            ], 404);
+        }
+
+        return new WP_REST_Response([
+            'success' => true,
+            'message' => 'Local post analysis (derived metadata only; no Laravel call).',
+            'analysis' => $analysis,
         ], 200);
     }
 
