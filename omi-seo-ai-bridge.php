@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.80
+ * Version:           1.0.83
  * Author:            TVH
  */
 
@@ -65,6 +65,7 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-post-images-extractor.php'
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-renamer.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-variant-repair.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-attachment-binary-replacer.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-content-type-map.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-sync-provider.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-capability-manifest.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-link-catalog-extractor.php';
@@ -268,6 +269,12 @@ add_action('admin_init', static function (): void {
             isset($_POST['omi_seo_redirections_enabled']) ? '1' : '0',
             false
         );
+
+        if (isset($_POST[\OmiSeoAiBridge\Content_Type_Map::OPTION]) && is_array($_POST[\OmiSeoAiBridge\Content_Type_Map::OPTION])) {
+            \OmiSeoAiBridge\Content_Type_Map::save(
+                (array) wp_unslash($_POST[\OmiSeoAiBridge\Content_Type_Map::OPTION])
+            );
+        }
 
         wp_safe_redirect(add_query_arg([
             'page' => 'omi-seo-ai',

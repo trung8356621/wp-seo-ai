@@ -2161,7 +2161,9 @@ final class Rest_Controller
             'post' => [
                 'wp_id' => (int) ($mapped['wp_id'] ?? $termId),
                 'type' => (string) ($mapped['type'] ?? ''),
+                'content_type' => (string) ($mapped['content_type'] ?? Content_Type_Map::resolve_content_type($taxonomy, true)),
                 'wp_post_type' => (string) ($mapped['wp_post_type'] ?? $taxonomy),
+                'wp_is_term' => true,
                 'wp_entity' => 'term',
                 'title' => (string) ($mapped['title'] ?? ''),
                 'slug' => (string) ($mapped['slug'] ?? ''),
@@ -2365,7 +2367,11 @@ final class Rest_Controller
                 'permalink' => (string) ($mapped['permalink'] ?? Permalink_Resolver::for_post($postId)),
                 'wp_entity' => 'post',
                 'type' => (string) ($mapped['type'] ?? ''),
+                'content_type' => (string) ($mapped['content_type'] ?? Content_Type_Map::resolve_content_type(
+                    (string) ($mapped['wp_post_type'] ?? '')
+                )),
                 'wp_post_type' => (string) ($mapped['wp_post_type'] ?? ''),
+                'wp_is_term' => false,
                 'category_ids' => is_array($mapped['category_ids'] ?? null)
                     ? $mapped['category_ids']
                     : [],

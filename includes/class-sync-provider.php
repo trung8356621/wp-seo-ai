@@ -221,7 +221,9 @@ final class Sync_Provider
             $entries[] = [
                 'wp_id'         => $postId,
                 'type'          => $seoType,
+                'content_type'  => Content_Type_Map::resolve_content_type($postType),
                 'wp_post_type'  => $postType,
+                'wp_is_term'    => false,
                 'wp_entity'     => 'post',
                 'post_modified' => (string) $post->post_modified,
             ];
@@ -277,7 +279,9 @@ final class Sync_Provider
             $entries[] = [
                 'wp_id'        => (int) $term->term_id,
                 'type'         => $seoType,
+                'content_type' => Content_Type_Map::resolve_content_type($taxonomy, true),
                 'wp_post_type' => $taxonomy,
+                'wp_is_term'   => true,
                 'wp_entity'    => 'term',
             ];
         }
@@ -388,7 +392,9 @@ final class Sync_Provider
         return [
             'wp_id' => (int) $post->ID,
             'type' => $seoType,
+            'content_type' => Content_Type_Map::resolve_content_type($wpPostType),
             'wp_post_type' => $wpPostType,
+            'wp_is_term' => false,
             'wp_entity' => 'post',
             'title' => (string) get_the_title($post),
             'slug' => (string) $post->post_name,
@@ -431,7 +437,9 @@ final class Sync_Provider
             'page_type'              => 'taxonomy',
             'wp_id'              => $termId,
             'type'               => $seoType,
+            'content_type'       => Content_Type_Map::resolve_content_type($taxonomy, true),
             'wp_post_type'       => $taxonomy,
+            'wp_is_term'         => true,
             'wp_entity'          => 'term',
             'title'              => (string) $term->name,
             'name'               => (string) $term->name,
@@ -484,7 +492,9 @@ final class Sync_Provider
         return [
             'wp_id'        => $postId,
             'type'         => $seoType,
+            'content_type' => Content_Type_Map::resolve_content_type($wpPostType),
             'wp_post_type' => $wpPostType,
+            'wp_is_term'   => false,
             'wp_entity'    => 'post',
             'title'        => (string) get_the_title($post),
             'slug'         => (string) $post->post_name,

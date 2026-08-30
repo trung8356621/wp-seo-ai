@@ -252,6 +252,69 @@ $localhost_warning = function_exists('omi_seo_ai_bridge_laravel_localhost_warnin
                 </p>
             </div>
 
+            <?php
+            $content_type_natives = class_exists(\OmiSeoAiBridge\Content_Type_Map::class)
+                ? \OmiSeoAiBridge\Content_Type_Map::discover_natives()
+                : [];
+            $content_type_effective = class_exists(\OmiSeoAiBridge\Content_Type_Map::class)
+                ? \OmiSeoAiBridge\Content_Type_Map::get_content_type_map()
+                : [];
+            $content_type_option = class_exists(\OmiSeoAiBridge\Content_Type_Map::class)
+                ? \OmiSeoAiBridge\Content_Type_Map::OPTION
+                : 'omi_seo_content_type_map';
+            $content_type_labels = [
+                'post' => __('Post (bài viết)', 'omi-seo-ai-bridge'),
+                'page' => __('Page (trang)', 'omi-seo-ai-bridge'),
+                'product' => __('Product (sản phẩm)', 'omi-seo-ai-bridge'),
+            ];
+            ?>
+            <?php if ($content_type_natives !== []) : ?>
+                <div class="omi-seo-ai-bridge-row">
+                    <label><?php esc_html_e('Ánh xạ kiểu nội dung WordPress → SEO Ops', 'omi-seo-ai-bridge'); ?></label>
+                    <p class="description" style="margin: 0 0 10px;">
+                        <?php esc_html_e('Mỗi post type / taxonomy của WordPress được quy về đúng một content_type: Post, Page hoặc Product. Custom post type chưa cấu hình mặc định là Post.', 'omi-seo-ai-bridge'); ?>
+                    </p>
+                    <table class="widefat striped" style="max-width: 640px;">
+                        <thead>
+                            <tr>
+                                <th><?php esc_html_e('Native WP Type', 'omi-seo-ai-bridge'); ?></th>
+                                <th style="width: 200px;"><?php esc_html_e('SEO Ops content_type', 'omi-seo-ai-bridge'); ?></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($content_type_natives as $native) : ?>
+                                <?php
+                                $native_slug = (string) $native['name'];
+                                $native_kind = ($native['kind'] ?? '') === 'taxonomy'
+                                    ? __('Taxonomy', 'omi-seo-ai-bridge')
+                                    : __('Post type', 'omi-seo-ai-bridge');
+                                $native_value = (string) ($content_type_effective[$native_slug] ?? 'post');
+                                ?>
+                                <tr>
+                                    <td>
+                                        <strong><?php echo esc_html((string) ($native['label'] ?? $native_slug)); ?></strong><br />
+                                        <code><?php echo esc_html($native_slug); ?></code>
+                                        <span class="description"> — <?php echo esc_html($native_kind); ?></span>
+                                    </td>
+                                    <td>
+                                        <select
+                                            name="<?php echo esc_attr($content_type_option . '[' . $native_slug . ']'); ?>"
+                                            id="<?php echo esc_attr('omi_seo_content_type_' . $native_slug); ?>"
+                                        >
+                                            <?php foreach ($content_type_labels as $target_value => $target_label) : ?>
+                                                <option value="<?php echo esc_attr($target_value); ?>" <?php selected($native_value, $target_value); ?>>
+                                                    <?php echo esc_html($target_label); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+
             <div class="omi-seo-ai-bridge-submit-wrap">
                 <button type="submit" name="omi_seo_save_settings" value="1" class="button button-primary">
                     <?php esc_html_e('Cập nhật API key', 'omi-seo-ai-bridge'); ?>

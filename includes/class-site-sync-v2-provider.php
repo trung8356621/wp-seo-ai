@@ -87,6 +87,7 @@ final class Site_Sync_V2_Provider
             'contacts' => $contacts,
             'schema_org' => $this->schema_org_suggest(),
             'post_types' => self::public_content_post_types(),
+            'content_type_map' => Content_Type_Map::get_content_type_map(),
         ];
     }
 
@@ -467,6 +468,8 @@ final class Site_Sync_V2_Provider
                 'status' => (string) $post->post_status,
                 'post_type' => (string) $post->post_type,
                 'type' => $post->post_type === 'product' ? 'product' : 'article',
+                'content_type' => Content_Type_Map::resolve_content_type((string) $post->post_type),
+                'wp_is_term' => false,
                 'content_hash' => hash('sha256', $raw),
                 'seo_meta_hash' => $this->seo_meta_hash(['seo' => $seo]),
                 'link_hash' => '',

@@ -228,6 +228,7 @@ final class Laravel_Push_Sync
         self::$queuedLifecycle[$postId] = [
             'action' => $action,
             'type' => $post->post_type === 'product' ? 'product' : 'article',
+            'content_type' => Content_Type_Map::resolve_content_type((string) $post->post_type),
             'wp_post_type' => (string) $post->post_type,
         ];
     }
@@ -268,7 +269,11 @@ final class Laravel_Push_Sync
             $items[] = [
                 'wp_id' => (int) $wpId,
                 'type' => (string) ($meta['type'] ?? 'article'),
+                'content_type' => (string) ($meta['content_type'] ?? Content_Type_Map::resolve_content_type(
+                    (string) ($meta['wp_post_type'] ?? 'post')
+                )),
                 'wp_post_type' => (string) ($meta['wp_post_type'] ?? 'post'),
+                'wp_is_term' => false,
                 'action' => (string) ($meta['action'] ?? 'trash'),
             ];
         }
