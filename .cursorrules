@@ -7,8 +7,11 @@
 Do not auto-increment version on ordinary edits.
 
 Plugin distribution is GitHub Releases only:
-- Tag: vx.y.z
-- Asset: wp-seo-ai-x.y.z.zip (folder `wp-seo-ai/` at ZIP root). Legacy `omi-seo-ai-bridge-x.y.z.zip` still accepted.
+- Tag: {version} (example 1.0.85; v-prefix also accepted by updater)
+- Asset: wp-seo-ai-{version}.zip (folder `wp-seo-ai/` at ZIP root; main file `wp-seo-ai/omi-seo-ai-bridge.php`)
+- Build: `php bin/build-plugin-release.php {version}` → `D:/work/build/wp-seo-ai-{version}.zip`
+- Do not upload unversioned `wp-seo-ai.zip` or GitHub source archives as the installer.
+- Legacy read-compat: `omi-seo-ai-bridge-{version}.zip` may still be accepted by updater; do not generate for new releases.
 - Laravel observes/triggers updates; it does not host ZIP packages.
 
-There is no compress_plugin.ps1 and no Laravel Update Server.
+There is no Laravel Update Server packaging path.

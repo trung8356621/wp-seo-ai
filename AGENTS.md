@@ -53,10 +53,27 @@
 
 ## Verification
 
-- This repo currently has no `composer.json`, `package.json`, or `phpunit.xml`; do not invent test/build commands.
-- For source changes, inspect syntax-sensitive PHP around changed methods and recommend a WP/PHP syntax check only when available in the user's environment.
-- Plugin packaging is manual ZIP uploaded to GitHub Releases (`wp-seo-ai-x.y.z.zip`, folder `wp-seo-ai/`). Do not host packages on Laravel.
-- For contract changes, also use backend verification guidance in `..\omnichannel-backend\AGENTS.md`.
+- Standalone contract tests (no WordPress bootstrap):
+  - `php tests/PluginUpdateContractTest.php`
+  - `php tests/ReleasePackageContractTest.php`
+- Plugin packaging is deterministic via:
+  - `php bin/build-plugin-release.php {version}`
+  - or `powershell -File bin/build-plugin-release.ps1 {version}`
+- Output ZIP: `D:/work/build/wp-seo-ai-{version}.zip` (outside the plugin repo) with root folder `wp-seo-ai/` and main file `wp-seo-ai/omi-seo-ai-bridge.php`.
+- Do **not** upload unversioned `wp-seo-ai.zip` or GitHub source archives as the installer asset.
+- Do not host packages on Laravel.
+- Do not leave build artifacts under `wp-seo-ai/dist`.
+
+## Release checklist
+
+1. Bump plugin header `Version:` and `OMI_SEO_AI_BRIDGE_VERSION` to the same `{version}`.
+2. Commit.
+3. Tag Git as `{version}` (example `1.0.85`; `v1.0.85` also parses).
+4. Build: `php bin/build-plugin-release.php {version}`
+5. Verify: `php tests/ReleasePackageContractTest.php` and inspect `D:/work/build/wp-seo-ai-{version}.zip`.
+6. Create GitHub Release for that tag.
+7. Upload **exact** asset `wp-seo-ai-{version}.zip` (not `wp-seo-ai.zip`).
+8. Force-refresh update check on a WP site (`force_refresh=1` / Check GitHub).
 
 ## Skills
 

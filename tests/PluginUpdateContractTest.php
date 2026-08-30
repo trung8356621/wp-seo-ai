@@ -186,6 +186,39 @@ $missingAsset = (new GitHub_Release_Client(
 omi_assert(($missingAsset['ok'] ?? true) === false, 'missing asset is not fatal');
 omi_assert(($missingAsset['code'] ?? '') === 'github_asset_missing', 'missing asset code');
 
+$unversionedAsset = (new GitHub_Release_Client(
+    omi_http_ok(omi_release_payload('1.0.84', 'wp-seo-ai.zip')),
+))->fetch_latest(true);
+omi_assert(($unversionedAsset['ok'] ?? true) === false, 'unversioned wp-seo-ai.zip rejected');
+omi_assert(($unversionedAsset['code'] ?? '') === 'github_asset_missing', 'unversioned asset code');
+omi_assert(($unversionedAsset['expected_asset'] ?? '') === 'wp-seo-ai-1.0.84.zip', 'unversioned diagnostic expected');
+omi_assert(in_array('wp-seo-ai.zip', $unversionedAsset['found_assets'] ?? [], true), 'unversioned diagnostic found');
+
+$wrongAsset = (new GitHub_Release_Client(
+    omi_http_ok(omi_release_payload('1.0.84', 'wp-seo-ai-1.0.83.zip')),
+))->fetch_latest(true);
+omi_assert(($wrongAsset['ok'] ?? true) === false, 'wrong-version asset rejected');
+omi_assert(($wrongAsset['expected_asset'] ?? '') === 'wp-seo-ai-1.0.84.zip', 'wrong-version diagnostic expected');
+
+$failCache = [];
+$failCacheSetCalls = 0;
+$failClient = new GitHub_Release_Client(
+    omi_http_ok(omi_release_payload('1.0.84', 'wp-seo-ai.zip')),
+    static function (string $key) use (&$failCache): mixed {
+        return $failCache[$key] ?? false;
+    },
+    static function (string $key, mixed $value, int $ttl) use (&$failCache, &$failCacheSetCalls): void {
+        unset($ttl);
+        $failCacheSetCalls++;
+        $failCache[$key] = $value;
+    },
+    static function (string $key) use (&$failCache): void {
+        unset($failCache[$key]);
+    },
+);
+$failClient->fetch_latest(true);
+omi_assert($failCacheSetCalls === 0, 'invalid package is not cached');
+
 $sourceZip = (new GitHub_Release_Client(
     omi_http_ok([
         'tag_name' => 'v1.0.75',

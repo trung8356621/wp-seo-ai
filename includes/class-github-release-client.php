@@ -9,7 +9,8 @@ if (! defined('ABSPATH')) {
 }
 
 /**
- * Public GitHub Releases client. No PAT. Cached 8h unless force_refresh.
+ * Public GitHub Releases client. No PAT. Successful responses cached 8h unless force_refresh.
+ * Failed / invalid package responses are never long-cached.
  */
 final class GitHub_Release_Client
 {
@@ -20,6 +21,10 @@ final class GitHub_Release_Client
     public const ASSET_SLUG = 'wp-seo-ai';
 
     public const LEGACY_ASSET_SLUG = 'omi-seo-ai-bridge';
+
+    public const PLUGIN_FOLDER = 'wp-seo-ai';
+
+    public const MAIN_PLUGIN_FILE = 'omi-seo-ai-bridge.php';
 
     public const TRANSIENT_KEY = 'omi_seo_github_latest_release';
 
@@ -74,15 +79,19 @@ final class GitHub_Release_Client
             ($this->cacheDelete)(self::TRANSIENT_KEY);
         } else {
             $cached = ($this->cacheGet)(self::TRANSIENT_KEY);
-            if (is_array($cached) && ($cached['ok'] ?? false) === true) {
+            // Only reuse successful package resolutions — never cache invalid assets for 8h.
+            if (is_array($cached) && ($cached['ok'] ?? false) === true && trim((string) ($cached['package_url'] ?? '')) !== '') {
                 $cached['from_cache'] = true;
 
                 return $cached;
             }
+            if (is_array($cached) && ($cached['ok'] ?? false) !== true) {
+                ($this->cacheDelete)(self::TRANSIENT_KEY);
+            }
         }
 
         $result = $this->request_latest();
-        if (($result['ok'] ?? false) === true) {
+        if (($result['ok'] ?? false) === true && trim((string) ($result['package_url'] ?? '')) !== '') {
             ($this->cacheSet)(self::TRANSIENT_KEY, $result, self::CACHE_TTL);
         }
 
@@ -142,14 +151,31 @@ final class GitHub_Release_Client
         $tag = trim((string) ($payload['tag_name'] ?? ''));
         $version = $this->parse_version($tag);
         if ($version === null) {
-            return $this->fail('github_invalid_tag', 'Bản phát hành GitHub không có phiên bản hợp lệ.');
+            return $this->fail(
+                'github_invalid_tag',
+                'Bản phát hành GitHub không có phiên bản hợp lệ.',
+                [
+                    'release_version' => null,
+                    'tag' => $tag !== '' ? $tag : null,
+                    'expected_asset' => null,
+                    'found_assets' => self::asset_names_from_payload($payload),
+                ],
+            );
         }
 
+        $expected = self::expected_asset_name($version);
+        $foundAssets = self::asset_names_from_payload($payload);
         $asset = $this->find_package_asset($payload, $version);
         if ($asset === null) {
             return $this->fail(
                 'github_asset_missing',
                 'Bản phát hành '.$version.' không có gói cài đặt hợp lệ.',
+                [
+                    'release_version' => $version,
+                    'tag' => $tag !== '' ? $tag : 'v'.$version,
+                    'expected_asset' => $expected,
+                    'found_assets' => $foundAssets,
+                ],
             );
         }
 
@@ -158,6 +184,13 @@ final class GitHub_Release_Client
             return $this->fail(
                 'github_asset_missing',
                 'Bản phát hành '.$version.' không có gói cài đặt hợp lệ.',
+                [
+                    'release_version' => $version,
+                    'tag' => $tag !== '' ? $tag : 'v'.$version,
+                    'expected_asset' => $expected,
+                    'found_assets' => $foundAssets,
+                    'rejected_url' => $packageUrl !== '' ? $packageUrl : null,
+                ],
             );
         }
 
@@ -166,6 +199,13 @@ final class GitHub_Release_Client
             return $this->fail(
                 'github_asset_missing',
                 'Bản phát hành '.$version.' không có gói cài đặt hợp lệ.',
+                [
+                    'release_version' => $version,
+                    'tag' => $tag !== '' ? $tag : 'v'.$version,
+                    'expected_asset' => $expected,
+                    'found_assets' => $foundAssets,
+                    'asset_size' => $size,
+                ],
             );
         }
 
@@ -174,19 +214,38 @@ final class GitHub_Release_Client
             'code' => null,
             'message' => '',
             'version' => $version,
+            'release_version' => $version,
             'tag' => $tag !== '' ? $tag : 'v'.$version,
             'release_url' => (string) ($payload['html_url'] ?? self::RELEASES_HTML),
             'package_url' => $packageUrl,
-            'asset_name' => (string) ($asset['name'] ?? $this->expected_asset_name($version)),
+            'asset_name' => (string) ($asset['name'] ?? $expected),
+            'expected_asset' => $expected,
+            'found_assets' => $foundAssets,
             'changelog' => trim((string) ($payload['body'] ?? '')),
             'published_at' => (string) ($payload['published_at'] ?? ''),
             'checked_at' => gmdate('c'),
         ];
     }
 
-    public function expected_asset_name(string $version): string
+    public static function expected_asset_name(string $version): string
     {
         return self::ASSET_SLUG.'-'.$version.'.zip';
+    }
+
+    public static function legacy_asset_name(string $version): string
+    {
+        return self::LEGACY_ASSET_SLUG.'-'.$version.'.zip';
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function accepted_asset_names(string $version): array
+    {
+        return [
+            self::expected_asset_name($version),
+            self::legacy_asset_name($version),
+        ];
     }
 
     public function parse_version(string $tag): ?string
@@ -201,6 +260,31 @@ final class GitHub_Release_Client
 
     /**
      * @param  array<string, mixed>  $payload
+     * @return list<string>
+     */
+    public static function asset_names_from_payload(array $payload): array
+    {
+        $assets = $payload['assets'] ?? [];
+        if (! is_array($assets)) {
+            return [];
+        }
+
+        $names = [];
+        foreach ($assets as $asset) {
+            if (! is_array($asset)) {
+                continue;
+            }
+            $name = trim((string) ($asset['name'] ?? ''));
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>|null
      */
     private function find_package_asset(array $payload, string $version): ?array
@@ -210,15 +294,13 @@ final class GitHub_Release_Client
             return null;
         }
 
-        $wanted = [
-            strtolower($this->expected_asset_name($version)),
-            strtolower(self::LEGACY_ASSET_SLUG.'-'.$version.'.zip'),
-        ];
+        $wanted = array_map('strtolower', self::accepted_asset_names($version));
         foreach ($assets as $asset) {
             if (! is_array($asset)) {
                 continue;
             }
             $name = strtolower(trim((string) ($asset['name'] ?? '')));
+            // Reject unversioned wp-seo-ai.zip and other non-matching names.
             if (in_array($name, $wanted, true)) {
                 return $asset;
             }
@@ -233,19 +315,23 @@ final class GitHub_Release_Client
     }
 
     /**
+     * @param  array<string, mixed>  $extra
      * @return array<string, mixed>
      */
-    private function fail(string $code, string $message): array
+    private function fail(string $code, string $message, array $extra = []): array
     {
-        return [
+        return array_merge([
             'ok' => false,
             'code' => $code,
             'message' => $message,
-            'version' => null,
+            'version' => $extra['release_version'] ?? null,
+            'release_version' => $extra['release_version'] ?? null,
             'package_url' => null,
+            'expected_asset' => $extra['expected_asset'] ?? null,
+            'found_assets' => $extra['found_assets'] ?? [],
             'release_url' => self::RELEASES_HTML,
             'checked_at' => gmdate('c'),
-        ];
+        ], $extra);
     }
 
     /**

@@ -204,8 +204,9 @@ final class Plugin_Updater
             return $source;
         }
 
-        $desired = $this->plugin_slug;
-        if ($desired === '.' || $desired === '\\' || $desired === '') {
+        // Always land on canonical folder wp-seo-ai/, never wp-seo-ai-1.0.x / omi-seo-ai-bridge / etc.
+        $desired = defined('OMI_SEO_AI_BRIDGE_SLUG') ? (string) OMI_SEO_AI_BRIDGE_SLUG : 'wp-seo-ai';
+        if ($desired === '' || $desired === '.' || $desired === '\\') {
             $desired = 'wp-seo-ai';
         }
 

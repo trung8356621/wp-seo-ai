@@ -1,0 +1,6 @@
+# Local / editor noise only. Release ZIPs must never live inside this plugin repo
+# (use D:/work/build via bin/build-plugin-release.php).
+.DS_Store
+Thumbs.db
+dist/
+*.zip
