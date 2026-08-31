@@ -108,6 +108,18 @@ final class Rest_Controller
             'permission_callback' => [self::class, 'authorize'],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/sync/v3/discover', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [self::class, 'handle_sync_v3_discover'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/sync/v3/records', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [self::class, 'handle_sync_v3_records'],
+            'permission_callback' => [self::class, 'authorize'],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/taxonomy-catalog/(?P<taxonomy>[a-z0-9_-]+)', [
             'methods'             => WP_REST_Server::READABLE,
             'callback'            => [self::class, 'handle_taxonomy_catalog'],
@@ -2689,6 +2701,57 @@ final class Rest_Controller
             'message' => $summary ? 'Manifest summary.' : 'Lightweight reconciliation manifest.',
             'manifest' => $manifest,
         ], 200);
+    }
+
+    public static function handle_sync_v3_discover(WP_REST_Request $request): WP_REST_Response
+    {
+        unset($request);
+        $provider = new Site_Sync_V3_Provider();
+
+        return new WP_REST_Response([
+            'success' => true,
+            'message' => 'Site Sync V3 discover.',
+            'discover' => $provider->discover(),
+        ], 200);
+    }
+
+    public static function handle_sync_v3_records(WP_REST_Request $request): WP_REST_Response
+    {
+        try {
+            $provider = new Site_Sync_V3_Provider();
+            $params = $request->get_json_params();
+            if (! is_array($params)) {
+                $params = [];
+            }
+
+            $payload = $provider->records([
+                'resource' => (string) ($params['resource'] ?? ''),
+                'mode' => (string) ($params['mode'] ?? 'full'),
+                'limit' => (int) ($params['limit'] ?? 50),
+                'snapshot_at' => isset($params['snapshot_at']) ? (string) $params['snapshot_at'] : '',
+                'cursor' => is_array($params['cursor'] ?? null) ? $params['cursor'] : [],
+                'since' => isset($params['since']) ? (string) $params['since'] : '',
+                'snapshot_bounds' => is_array($params['snapshot_bounds'] ?? null)
+                    ? $params['snapshot_bounds']
+                    : [],
+                'content_max_id' => (int) ($params['content_max_id'] ?? $params['snapshot_content_max_id'] ?? 0),
+                'term_max_id' => (int) ($params['term_max_id'] ?? $params['snapshot_term_max_id'] ?? 0),
+            ]);
+
+            $ok = ($payload['success'] ?? true) !== false;
+
+            return new WP_REST_Response([
+                'success' => $ok,
+                'message' => $ok ? 'Site Sync V3 records.' : (string) ($payload['error'] ?? 'records failed'),
+                'records' => $payload,
+            ], $ok ? 200 : 400);
+        } catch (\Throwable $e) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => 'sync v3 records failed: '.$e->getMessage(),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     public static function handle_sync(WP_REST_Request $request): WP_REST_Response

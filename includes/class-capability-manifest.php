@@ -141,6 +141,16 @@ final class Capability_Manifest
                 'available' => true,
                 'provider' => 'omi_bridge',
             ],
+            'site_sync_v3' => [
+                'available' => true,
+                'provider' => 'omi_bridge',
+                'version' => 3,
+                'schema' => 'site_sync.v3',
+                'endpoints' => [
+                    'GET /omi-seo-ai/v1/sync/v3/discover',
+                    'POST /omi-seo-ai/v1/sync/v3/records',
+                ],
+            ],
         ];
         $capabilities = array_merge($capabilities, $localEngine);
 

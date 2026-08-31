@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.84
+ * Version:           1.0.85
  * Author:            TVH
  */
 
@@ -41,7 +41,7 @@ if (defined('OMI_SEO_AI_BRIDGE_LOADED')) {
 }
 
 define('OMI_SEO_AI_BRIDGE_LOADED', true);
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.84');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.85');
 define('OMI_SEO_AI_BRIDGE_SLUG', 'wp-seo-ai');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
@@ -72,6 +72,8 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-post-analysis-service.php'
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-link-catalog-extractor.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-score-exporter.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-site-sync-v2-provider.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-site-sync-v3-provider.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-site-sync-change-log.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-site-sync-outbox.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-polylang-sync.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-comment-review-publisher.php';
@@ -110,6 +112,7 @@ add_action('rest_api_init', static function (): void {
 add_action('init', static function (): void {
     \OmiSeoAiBridge\Taxonomy_Catalog::register();
     \OmiSeoAiBridge\Laravel_Push_Sync::register();
+    \OmiSeoAiBridge\Site_Sync_Change_Log::register();
     \OmiSeoAiBridge\Site_Sync_Outbox::register();
     \OmiSeoAiBridge\Local_Seo_Engine::register();
     \OmiSeoAiBridge\Post_Analysis_Service::register();
