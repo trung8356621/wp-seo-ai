@@ -55,7 +55,7 @@ final class Bridge_Update_Service
         $latest = (string) ($remote['version'] ?? '');
         $updateAvailable = $latest !== '' && version_compare($installed, $latest, '<');
 
-        return [
+        $payload = [
             'ok' => true,
             'code' => null,
             'message' => '',
@@ -71,7 +71,46 @@ final class Bridge_Update_Service
             'changelog' => (string) ($remote['changelog'] ?? ''),
             'checked_at' => (string) ($remote['checked_at'] ?? gmdate('c')),
             'from_cache' => (bool) ($remote['from_cache'] ?? false),
+            'wordpress_update_cache_refreshed' => false,
+            'plugin_basename' => $this->plugin_basename(),
         ];
+
+        // Force GitHub refresh must also rebuild WP native update_plugins (Plugins UI / auto-update).
+        if ($force_refresh) {
+            $payload['wordpress_update_cache_refreshed'] = $this->refresh_wordpress_update_cache();
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Invalidate WP native plugin update cache and rebuild via wp_update_plugins().
+     * Plugin_Updater::check_for_update (pre_set_site_transient_update_plugins) injects the response.
+     */
+    public function refresh_wordpress_update_cache(): bool
+    {
+        if (function_exists('delete_site_transient')) {
+            delete_site_transient('update_plugins');
+        }
+
+        if (function_exists('wp_clean_plugins_cache')) {
+            wp_clean_plugins_cache(true);
+        }
+
+        if (! function_exists('wp_update_plugins')) {
+            $updateInc = (defined('ABSPATH') ? ABSPATH : '').'wp-admin/includes/update.php';
+            if (is_string($updateInc) && is_readable($updateInc)) {
+                require_once $updateInc;
+            }
+        }
+
+        if (! function_exists('wp_update_plugins')) {
+            return false;
+        }
+
+        wp_update_plugins();
+
+        return true;
     }
 
     /**

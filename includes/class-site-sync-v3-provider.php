@@ -222,6 +222,9 @@ final class Site_Sync_V3_Provider
         $afterChangeId = max(0, (int) ($cursor['after_change_id'] ?? 0));
         $deletesExhausted = (bool) ($cursor['deletes_exhausted'] ?? false);
         $afterId = max(0, (int) ($cursor['after_id'] ?? 0));
+        $afterModifiedGmt = isset($cursor['after_modified_gmt'])
+            ? (string) $cursor['after_modified_gmt']
+            : '';
         $sinceGmt = $this->normalize_since_gmt($since);
         $items = [];
 
@@ -251,6 +254,7 @@ final class Site_Sync_V3_Provider
                     'items' => $items,
                     'next_cursor' => [
                         'after_id' => $afterId,
+                        'after_modified_gmt' => $afterModifiedGmt,
                         'after_change_id' => $afterChangeId,
                         'deletes_exhausted' => false,
                     ],
@@ -263,7 +267,7 @@ final class Site_Sync_V3_Provider
 
         $remaining = $limit - count($items);
         if ($remaining > 0) {
-            $rows = $this->query_content_delta($afterId, $remaining, $since);
+            $rows = $this->query_content_delta($afterId, $afterModifiedGmt, $remaining, $since);
             $seenDeleteIds = [];
             foreach ($items as $existing) {
                 if (($existing['op'] ?? '') === 'delete') {
@@ -275,10 +279,12 @@ final class Site_Sync_V3_Provider
                 if ($postId <= 0 || Sync_Provider::is_sync_excluded_post($postId)) {
                     continue;
                 }
+                $modifiedGmt = (string) ($row['post_modified_gmt'] ?? '');
                 $status = (string) ($row['post_status'] ?? '');
                 if ($status === 'trash') {
                     if (isset($seenDeleteIds[$postId])) {
-                        $afterId = max($afterId, $postId);
+                        $afterId = $postId;
+                        $afterModifiedGmt = $modifiedGmt;
                         continue;
                     }
                     $items[] = [
@@ -289,7 +295,8 @@ final class Site_Sync_V3_Provider
                         'wp_is_term' => false,
                         'status' => 'trash',
                     ];
-                    $afterId = max($afterId, $postId);
+                    $afterId = $postId;
+                    $afterModifiedGmt = $modifiedGmt;
                     continue;
                 }
 
@@ -298,7 +305,10 @@ final class Site_Sync_V3_Provider
                     continue;
                 }
                 $items[] = $this->build_content_upsert($post, $meta);
-                $afterId = max($afterId, $postId);
+                $afterId = $postId;
+                $afterModifiedGmt = $modifiedGmt !== ''
+                    ? $modifiedGmt
+                    : (string) ($post->post_modified_gmt ?? '');
             }
             $postsHasMore = count($rows) >= $remaining;
         } else {
@@ -315,6 +325,7 @@ final class Site_Sync_V3_Provider
             'items' => $items,
             'next_cursor' => [
                 'after_id' => $afterId,
+                'after_modified_gmt' => $afterModifiedGmt,
                 'after_change_id' => $afterChangeId,
                 'deletes_exhausted' => $deletesExhausted,
             ],
@@ -681,11 +692,14 @@ final class Site_Sync_V3_Provider
     }
 
     /**
-     * Delta keyset: modified_gmt >= since (2s overlap) AND ID > after_id, includes trash.
+     * Delta keyset on change time then ID:
+     *   modified_gmt >= since
+     *   AND (modified_gmt > after_modified OR (modified_gmt = after_modified AND ID > after_id))
+     * ORDER BY post_modified_gmt ASC, ID ASC
      *
-     * @return list<array{ID:int|string,post_type:string,post_status:string}>
+     * @return list<array{ID:int|string,post_type:string,post_status:string,post_modified_gmt?:string}>
      */
-    private function query_content_delta(int $afterId, int $limit, string $since): array
+    private function query_content_delta(int $afterId, string $afterModifiedGmt, int $limit, string $since): array
     {
         global $wpdb;
 
@@ -695,16 +709,23 @@ final class Site_Sync_V3_Provider
         $statusPlaceholders = implode(',', array_fill(0, count($statuses), '%s'));
 
         $sinceGmt = $this->normalize_since_gmt($since);
+        $afterModifiedGmt = trim($afterModifiedGmt);
+        if ($afterModifiedGmt === '') {
+            $afterModifiedGmt = '1970-01-01 00:00:00';
+        }
 
-        $sql = "SELECT ID, post_type, post_status FROM {$wpdb->posts}
-            WHERE ID > %d
-            AND post_type IN ({$typePlaceholders})
+        $sql = "SELECT ID, post_type, post_status, post_modified_gmt FROM {$wpdb->posts}
+            WHERE post_type IN ({$typePlaceholders})
             AND post_status IN ({$statusPlaceholders})
             AND post_modified_gmt >= %s
-            ORDER BY ID ASC
+            AND (
+                post_modified_gmt > %s
+                OR (post_modified_gmt = %s AND ID > %d)
+            )
+            ORDER BY post_modified_gmt ASC, ID ASC
             LIMIT %d";
 
-        $params = array_merge([$afterId], $types, $statuses, [$sinceGmt, $limit]);
+        $params = array_merge($types, $statuses, [$sinceGmt, $afterModifiedGmt, $afterModifiedGmt, $afterId, $limit]);
         $prepared = $wpdb->prepare($sql, $params);
         if (! is_string($prepared)) {
             return [];

@@ -1031,6 +1031,28 @@ final class Rest_Controller
         }
 
         $status = isset($body['status']) ? sanitize_key((string) $body['status']) : '';
+        // Explicit trash for Site Sync V3 tombstone acceptance / lifecycle.
+        if ($status === 'trash') {
+            Laravel_Push_Sync::suppress(false); // allow trash hooks → change log
+            $trashed = self::with_write_capabilities(static function () use ($postId) {
+                return wp_trash_post($postId);
+            });
+            if ($trashed === false || $trashed === null) {
+                return new WP_REST_Response([
+                    'success' => false,
+                    'message' => 'wp_trash_post failed.',
+                    'wp_post_id' => $postId,
+                ], 422);
+            }
+
+            return new WP_REST_Response([
+                'success' => true,
+                'message' => 'Post moved to trash.',
+                'wp_post_id' => $postId,
+                'status' => 'trash',
+            ], 200);
+        }
+
         $allowedStatuses = ['publish', 'draft', 'pending', 'future', 'private'];
         // Outbound Laravel → WP: chỉ nhận publish (lịch xử lý ở Laravel). draft/future bị bỏ.
         if ($status === 'future') {

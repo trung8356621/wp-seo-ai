@@ -10,7 +10,8 @@ if (! defined('ABSPATH')) {
 
 /**
  * WP native update discovery from GitHub Releases only.
- * Does not enable unattended auto-updates. No Laravel update-server fallback.
+ * Injects into update_plugins transient so Plugins UI and core auto-update share one package URL.
+ * No Laravel update-server fallback. No custom auto-update scheduler.
  */
 final class Plugin_Updater
 {

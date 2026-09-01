@@ -37,6 +37,82 @@ function delete_transient(string $key): bool
     return true;
 }
 
+function get_site_transient(string $key): mixed
+{
+    return $GLOBALS['omiSiteTransients'][$key] ?? false;
+}
+
+function set_site_transient(string $key, mixed $value, int $ttl = 0): bool
+{
+    unset($ttl);
+    $GLOBALS['omiSiteTransients'][$key] = $value;
+
+    return true;
+}
+
+function delete_site_transient(string $key): bool
+{
+    unset($GLOBALS['omiSiteTransients'][$key]);
+
+    return true;
+}
+
+function wp_clean_plugins_cache(bool $clear_update_cache = true): void
+{
+    $GLOBALS['omiWpCleanPluginsCacheCalls'] = (int) ($GLOBALS['omiWpCleanPluginsCacheCalls'] ?? 0) + 1;
+    if ($clear_update_cache) {
+        unset($GLOBALS['omiSiteTransients']['update_plugins']);
+    }
+}
+
+function wp_update_plugins(): void
+{
+    $GLOBALS['omiWpUpdatePluginsCalls'] = (int) ($GLOBALS['omiWpUpdatePluginsCalls'] ?? 0) + 1;
+    // Simulate WP rebuild: filter pre_set runs via Plugin_Updater when present.
+    $current = $GLOBALS['omiSiteTransients']['update_plugins'] ?? null;
+    if (! is_object($current)) {
+        $current = new stdClass();
+    }
+    if (! isset($current->checked) || ! is_array($current->checked)) {
+        $current->checked = [
+            OMI_SEO_AI_BRIDGE_BASENAME => (string) OMI_SEO_AI_BRIDGE_VERSION,
+        ];
+    }
+    if (! empty($GLOBALS['omiPreSetUpdatePluginsFilter']) && is_callable($GLOBALS['omiPreSetUpdatePluginsFilter'])) {
+        $current = ($GLOBALS['omiPreSetUpdatePluginsFilter'])($current);
+    }
+    $GLOBALS['omiSiteTransients']['update_plugins'] = $current;
+}
+
+function plugin_basename(string $file): string
+{
+    unset($file);
+
+    return (string) OMI_SEO_AI_BRIDGE_BASENAME;
+}
+
+function add_filter(string $hook, mixed $callback, int $priority = 10, int $accepted = 1): bool
+{
+    unset($priority, $accepted);
+    if ($hook === 'pre_set_site_transient_update_plugins') {
+        $GLOBALS['omiPreSetUpdatePluginsFilter'] = $callback;
+    }
+
+    return true;
+}
+
+function add_action(string $hook, mixed $callback, int $priority = 10, int $accepted = 1): bool
+{
+    unset($hook, $callback, $priority, $accepted);
+
+    return true;
+}
+
+$GLOBALS['omiSiteTransients'] = [];
+$GLOBALS['omiWpCleanPluginsCacheCalls'] = 0;
+$GLOBALS['omiWpUpdatePluginsCalls'] = 0;
+$GLOBALS['omiPreSetUpdatePluginsFilter'] = null;
+
 function get_option(string $key, mixed $default = false): mixed
 {
     return $GLOBALS['omiOptions'][$key] ?? $default;
@@ -54,7 +130,9 @@ function get_plugin_data(string $file, bool $markup = true, bool $translate = tr
 {
     unset($file, $markup, $translate);
 
-    return ['Version' => (string) OMI_SEO_AI_BRIDGE_VERSION];
+    $version = (string) ($GLOBALS['omiInstalledVersionOverride'] ?? OMI_SEO_AI_BRIDGE_VERSION);
+
+    return ['Version' => $version];
 }
 
 function is_plugin_active(string $plugin): bool
@@ -72,10 +150,12 @@ function activate_plugin(string $plugin, string $redirect = '', bool $network_wi
 require_once dirname(__DIR__).'/includes/class-operation-store.php';
 require_once dirname(__DIR__).'/includes/class-github-release-client.php';
 require_once dirname(__DIR__).'/includes/class-bridge-update-service.php';
+require_once dirname(__DIR__).'/includes/class-plugin-updater.php';
 
 use OmiSeoAiBridge\Bridge_Update_Service;
 use OmiSeoAiBridge\GitHub_Release_Client;
 use OmiSeoAiBridge\Operation_Store;
+use OmiSeoAiBridge\Plugin_Updater;
 
 $failures = 0;
 
@@ -297,6 +377,76 @@ omi_assert(str_contains($bootstrapSrc, 'deactivate_plugins'), 'duplicate copy de
 omi_assert(! str_contains($bootstrapSrc, '/api/seo/plugin/update-check'), 'settings check does not hit Laravel update-check');
 omi_assert(str_contains($bootstrapSrc, 'Bridge_Update_Service'), 'settings check uses Bridge_Update_Service');
 omi_assert(str_contains($bootstrapSrc, 'omi_seo_check_github_update'), 'settings has Check GitHub action');
+omi_assert(str_contains($bootstrapSrc, 'Plugin_Updater::boot'), 'Plugin_Updater boots early');
+
+$bridgeSrc = (string) file_get_contents(dirname(__DIR__).'/includes/class-bridge-update-service.php');
+omi_assert(str_contains($bridgeSrc, 'refresh_wordpress_update_cache'), 'Bridge_Update_Service refreshes WP update cache');
+omi_assert(str_contains($bridgeSrc, 'delete_site_transient'), 'force check deletes update_plugins transient');
+omi_assert(str_contains($bridgeSrc, 'wp_update_plugins'), 'force check calls wp_update_plugins');
+omi_assert(str_contains($updaterSrc, 'pre_set_site_transient_update_plugins'), 'Plugin_Updater hooks pre_set_site_transient_update_plugins');
+
+// --- Native Plugins UI: check_for_update injects 1.0.85 for installed 1.0.84 ---
+$GLOBALS['omiInstalledVersionOverride'] = '1.0.84';
+$GLOBALS['omiPreSetUpdatePluginsFilter'] = null;
+Plugin_Updater::boot(dirname(__DIR__).DIRECTORY_SEPARATOR.'omi-seo-ai-bridge.php');
+omi_assert(is_callable($GLOBALS['omiPreSetUpdatePluginsFilter'] ?? null), 'Plugin_Updater registers pre_set filter');
+
+$cachedRelease = [
+    'ok' => true,
+    'version' => '1.0.85',
+    'package_url' => 'https://github.com/trung8356621/wp-seo-ai/releases/download/1.0.85/wp-seo-ai-1.0.85.zip',
+    'asset_name' => 'wp-seo-ai-1.0.85.zip',
+    'expected_asset' => 'wp-seo-ai-1.0.85.zip',
+    'found_assets' => ['wp-seo-ai-1.0.85.zip'],
+    'release_url' => 'https://github.com/trung8356621/wp-seo-ai/releases/tag/1.0.85',
+    'changelog' => '1.0.85',
+    'checked_at' => '2026-08-31T00:00:00Z',
+];
+set_transient(GitHub_Release_Client::TRANSIENT_KEY, $cachedRelease);
+
+$transient = new stdClass();
+$transient->checked = [OMI_SEO_AI_BRIDGE_BASENAME => '1.0.84'];
+$transient->response = [];
+$filtered = ($GLOBALS['omiPreSetUpdatePluginsFilter'])($transient);
+omi_assert(is_object($filtered), 'check_for_update returns object');
+omi_assert(isset($filtered->response[OMI_SEO_AI_BRIDGE_BASENAME]), 'response key is exact installed basename');
+$updateObj = $filtered->response[OMI_SEO_AI_BRIDGE_BASENAME];
+omi_assert((string) ($updateObj->new_version ?? '') === '1.0.85', 'new_version = 1.0.85');
+omi_assert(trim((string) ($updateObj->package ?? '')) !== '', 'package URL non-empty');
+omi_assert(
+    str_contains((string) $updateObj->package, 'wp-seo-ai-1.0.85.zip'),
+    'package URL is canonical versioned zip'
+);
+omi_assert((string) ($updateObj->plugin ?? '') === OMI_SEO_AI_BRIDGE_BASENAME, 'update plugin basename matches');
+
+// --- Force GitHub check synchronizes WP update_plugins cache ---
+$GLOBALS['omiWpUpdatePluginsCalls'] = 0;
+$GLOBALS['omiWpCleanPluginsCacheCalls'] = 0;
+$GLOBALS['omiSiteTransients']['update_plugins'] = (object) ['stale_marker' => true, 'checked' => []];
+$forceClient = new GitHub_Release_Client(
+    omi_http_ok(omi_release_payload('1.0.85', 'wp-seo-ai-1.0.85.zip')),
+);
+$forceService = new Bridge_Update_Service($forceClient);
+$forceCheck = $forceService->check(true);
+omi_assert(($forceCheck['ok'] ?? false) === true, 'force check ok for 1.0.85');
+omi_assert(($forceCheck['update_available'] ?? false) === true, 'force check sees update vs 1.0.84');
+omi_assert(($forceCheck['wordpress_update_cache_refreshed'] ?? false) === true, 'force check refreshed WP update cache');
+omi_assert(($forceCheck['plugin_basename'] ?? '') === OMI_SEO_AI_BRIDGE_BASENAME, 'force check reports plugin basename');
+omi_assert($GLOBALS['omiWpCleanPluginsCacheCalls'] >= 1, 'wp_clean_plugins_cache called');
+omi_assert($GLOBALS['omiWpUpdatePluginsCalls'] >= 1, 'wp_update_plugins called');
+$rebuilt = $GLOBALS['omiSiteTransients']['update_plugins'] ?? null;
+omi_assert(is_object($rebuilt), 'update_plugins transient rebuilt');
+omi_assert(! isset($rebuilt->stale_marker), 'stale update_plugins marker cleared');
+omi_assert(
+    isset($rebuilt->response[OMI_SEO_AI_BRIDGE_BASENAME]),
+    'rebuilt transient contains update for installed basename'
+);
+omi_assert(
+    (string) ($rebuilt->response[OMI_SEO_AI_BRIDGE_BASENAME]->new_version ?? '') === '1.0.85',
+    'rebuilt transient new_version 1.0.85'
+);
+
+$GLOBALS['omiInstalledVersionOverride'] = null;
 
 if ($failures > 0) {
     fwrite(STDERR, "{$failures} assertion(s) failed\n");
