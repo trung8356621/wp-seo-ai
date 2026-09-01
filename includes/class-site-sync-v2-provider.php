@@ -78,6 +78,7 @@ final class Site_Sync_V2_Provider
 
         return [
             'site_url' => (string) ($info['site_url'] ?? home_url('/')),
+            'site_name' => (string) get_bloginfo('name'),
             'wordpress_version' => (string) ($info['wordpress_version'] ?? ''),
             'bridge_version' => defined('OMI_SEO_AI_BRIDGE_VERSION') ? (string) OMI_SEO_AI_BRIDGE_VERSION : '',
             'permalink' => is_array($info['permalink'] ?? null) ? $info['permalink'] : [],

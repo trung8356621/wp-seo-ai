@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TVH SEO AI Bridge
  * Description:       Kết nối WordPress với Laravel Omnichannel Backend để đồng bộ nội dung TVH SEO AI.
- * Version:           1.0.86
+ * Version:           1.0.87
  * Author:            TVH
  */
 
@@ -41,7 +41,7 @@ if (defined('OMI_SEO_AI_BRIDGE_LOADED')) {
 }
 
 define('OMI_SEO_AI_BRIDGE_LOADED', true);
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.86');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.87');
 define('OMI_SEO_AI_BRIDGE_SLUG', 'wp-seo-ai');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
