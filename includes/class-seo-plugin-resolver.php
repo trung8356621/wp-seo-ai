@@ -95,10 +95,13 @@ final class Seo_Plugin_Resolver
             'templates_version' => 1,
             'templates'     => [
                 'post' => self::sample_post_permalink_template('post'),
+                'page' => self::sample_post_permalink_template('page'),
                 'category' => self::sample_term_permalink_template('category'),
                 'product' => self::sample_post_permalink_template('product'),
                 'product_category' => self::sample_term_permalink_template('product_cat'),
             ],
+            // Rewrite map for native/custom CPTs (and page) — Laravel candidate URLs only.
+            'post_types' => self::permalink_post_type_rewrites(),
         ];
 
         if (! class_exists('WooCommerce') && ! function_exists('WC') && ! post_type_exists('product')) {
@@ -119,17 +122,52 @@ final class Seo_Plugin_Resolver
         return $settings;
     }
 
+    /**
+     * @return array<string, array{rewrite_slug: string, hierarchical: bool, with_front: bool}>
+     */
+    private static function permalink_post_type_rewrites(): array
+    {
+        $out = [];
+        $types = get_post_types(['public' => true], 'objects');
+        if (! is_array($types)) {
+            return $out;
+        }
+
+        foreach ($types as $name => $object) {
+            if (! is_object($object)) {
+                continue;
+            }
+            $slug = (string) $name;
+            if (in_array($slug, ['attachment', 'revision', 'nav_menu_item', 'custom_css', 'customize_changeset'], true)) {
+                continue;
+            }
+
+            $rewrite = is_array($object->rewrite ?? null) ? $object->rewrite : [];
+            $rewriteSlug = array_key_exists('slug', $rewrite)
+                ? (string) $rewrite['slug']
+                : ($slug === 'page' || $slug === 'post' ? '' : $slug);
+
+            $out[$slug] = [
+                'rewrite_slug' => $rewriteSlug,
+                'hierarchical' => (bool) ($object->hierarchical ?? false),
+                'with_front' => array_key_exists('with_front', $rewrite)
+                    ? (bool) $rewrite['with_front']
+                    : true,
+            ];
+        }
+
+        return $out;
+    }
+
     private static function sample_post_permalink_template(string $postType): string
     {
         if (! post_type_exists($postType)) {
             return '';
         }
 
-        global $wpdb;
-        $postId = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status NOT IN ('trash', 'auto-draft', 'inherit') ORDER BY ID DESC LIMIT 1",
-            $postType,
-        ));
+        // Sample from the site default language only. Latest-ID across all languages
+        // often picks an English translation and bakes `/en/` into a site-wide template.
+        $postId = self::sample_post_id_for_permalink_template($postType);
         if ($postId <= 0) {
             return '';
         }
@@ -138,6 +176,47 @@ final class Seo_Plugin_Resolver
         $url = Permalink_Resolver::for_post($postId);
 
         return self::replace_url_slug_with_token($url, $slug);
+    }
+
+    private static function sample_post_id_for_permalink_template(string $postType): int
+    {
+        $args = [
+            'post_type'              => $postType,
+            'post_status'            => ['publish', 'draft', 'pending', 'private', 'future'],
+            'posts_per_page'         => 1,
+            'orderby'                => 'ID',
+            'order'                  => 'DESC',
+            'fields'                 => 'ids',
+            'no_found_rows'          => true,
+            'ignore_sticky_posts'    => true,
+            'update_post_meta_cache' => false,
+            'update_post_term_cache' => false,
+        ];
+
+        if (Polylang_Sync::is_active() && function_exists('pll_default_language')) {
+            $default = Polylang_Sync::normalize_language_slug(
+                trim((string) pll_default_language('slug')),
+            );
+            if ($default !== '') {
+                $args['lang'] = $default;
+            }
+        }
+
+        $query = new \WP_Query($args);
+        $id = isset($query->posts[0]) ? (int) $query->posts[0] : 0;
+        wp_reset_postdata();
+
+        if ($id > 0) {
+            return $id;
+        }
+
+        // Fallback: any language (legacy sites / empty default-lang catalog).
+        global $wpdb;
+
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status NOT IN ('trash', 'auto-draft', 'inherit') ORDER BY ID DESC LIMIT 1",
+            $postType,
+        ));
     }
 
     private static function sample_term_permalink_template(string $taxonomy): string

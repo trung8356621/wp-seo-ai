@@ -41,7 +41,7 @@ final class Capability_Manifest
                 'version' => 1,
                 'schema' => Taxonomy_Catalog::SCHEMA,
                 'taxonomies' => Taxonomy_Catalog::SUPPORTED,
-                'endpoint' => 'GET /omi-seo-ai/v1/taxonomy-catalog/{taxonomy}',
+                'endpoint' => 'GET /omi-seo-ai/v1/taxonomy-catalog/{taxonomy}?lang=',
             ],
             'product_category_taxonomy_export' => [
                 'available' => taxonomy_exists('product_cat'),

@@ -29,6 +29,9 @@ final class Taxonomy_Catalog
     /** @var callable|null */
     private static $termsProvider = null;
 
+    /** @var callable|null Resolves Polylang term language slug for a term id (tests). */
+    private static $termLanguageProvider = null;
+
     /** @var array<string, int> */
     private static array $rebuildCounts = [];
 
@@ -43,6 +46,7 @@ final class Taxonomy_Catalog
     {
         self::$directoryOverride = null;
         self::$termsProvider = null;
+        self::$termLanguageProvider = null;
         self::$rebuildCounts = [];
     }
 
@@ -54,6 +58,11 @@ final class Taxonomy_Catalog
     public static function set_terms_provider(?callable $provider): void
     {
         self::$termsProvider = $provider;
+    }
+
+    public static function set_term_language_provider(?callable $provider): void
+    {
+        self::$termLanguageProvider = $provider;
     }
 
     public static function rebuild_count(string $taxonomy): int
@@ -136,9 +145,10 @@ final class Taxonomy_Catalog
     }
 
     /**
+     * @param  string|null  $lang  Optional Polylang language slug (normalized). Empty/null = all terms (BC).
      * @return array{ok: bool, status: int, body: array<string, mixed>}
      */
-    public static function rest_payload(string $taxonomy): array
+    public static function rest_payload(string $taxonomy, ?string $lang = null): array
     {
         $taxonomy = sanitize_key($taxonomy);
         if (! self::is_supported($taxonomy)) {
@@ -154,6 +164,7 @@ final class Taxonomy_Catalog
         }
 
         $items = self::read($taxonomy);
+        $items = self::filter_items_by_language($items, $lang);
 
         return [
             'ok' => true,
@@ -164,6 +175,60 @@ final class Taxonomy_Catalog
                 'items' => $items,
             ],
         ];
+    }
+
+    /**
+     * Filter catalog items to terms whose Polylang language matches $lang.
+     * When $lang is empty, or Polylang is inactive (and no test provider), returns all items.
+     *
+     * @param  list<array{id: int, name: string, parent: int}>  $items
+     * @return list<array{id: int, name: string, parent: int}>
+     */
+    public static function filter_items_by_language(array $items, ?string $lang): array
+    {
+        $lang = Polylang_Sync::normalize_language_slug(trim((string) $lang));
+        if ($lang === '') {
+            return $items;
+        }
+
+        $hasProvider = is_callable(self::$termLanguageProvider);
+        if (! $hasProvider && ! Polylang_Sync::is_active() && ! function_exists('pll_get_term_language')) {
+            return $items;
+        }
+
+        $filtered = [];
+        foreach ($items as $item) {
+            $termId = (int) ($item['id'] ?? 0);
+            if ($termId <= 0) {
+                continue;
+            }
+
+            $termLang = self::resolve_term_language($termId);
+            if ($termLang === '' || $termLang !== $lang) {
+                continue;
+            }
+
+            $filtered[] = [
+                'id' => $termId,
+                'name' => (string) ($item['name'] ?? ''),
+                'parent' => (int) ($item['parent'] ?? 0),
+            ];
+        }
+
+        return $filtered;
+    }
+
+    private static function resolve_term_language(int $termId): string
+    {
+        if (is_callable(self::$termLanguageProvider)) {
+            return Polylang_Sync::normalize_language_slug(
+                trim((string) (self::$termLanguageProvider)($termId))
+            );
+        }
+
+        $payload = Polylang_Sync::payload_for_term($termId);
+
+        return is_array($payload) ? (string) ($payload['current_lang'] ?? '') : '';
     }
 
     /**

@@ -130,6 +130,12 @@ final class Rest_Controller
                     'required'          => true,
                     'sanitize_callback' => static fn ($value): string => sanitize_key((string) $value),
                 ],
+                'lang' => [
+                    'type'              => 'string',
+                    'required'          => false,
+                    'default'           => '',
+                    'sanitize_callback' => static fn ($value): string => sanitize_key((string) $value),
+                ],
             ],
         ]);
 
@@ -2246,7 +2252,11 @@ final class Rest_Controller
 
     public static function handle_taxonomy_catalog(WP_REST_Request $request): WP_REST_Response
     {
-        $result = Taxonomy_Catalog::rest_payload((string) $request->get_param('taxonomy'));
+        $lang = trim((string) $request->get_param('lang'));
+        $result = Taxonomy_Catalog::rest_payload(
+            (string) $request->get_param('taxonomy'),
+            $lang !== '' ? $lang : null,
+        );
 
         return new WP_REST_Response($result['body'], $result['status']);
     }

@@ -210,7 +210,7 @@ final class Post_Analysis_Service
         $featuredId = (int) get_post_thumbnail_id($postId);
         $featuredUrl = '';
         if ($featuredId > 0) {
-            $src = wp_get_attachment_image_url($featuredId, 'full');
+            $src = wp_get_attachment_url($featuredId);
             $featuredUrl = is_string($src) ? $src : '';
         }
 

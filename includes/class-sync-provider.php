@@ -386,7 +386,7 @@ final class Sync_Provider
         $featuredImageUrl = '';
         $thumbId = (int) get_post_thumbnail_id($post);
         if ($thumbId > 0) {
-            $featuredImageUrl = (string) wp_get_attachment_image_url($thumbId, 'medium');
+            $featuredImageUrl = (string) wp_get_attachment_url($thumbId);
         }
 
         return [
@@ -477,7 +477,7 @@ final class Sync_Provider
         $featuredImageUrl = '';
         $thumbId = (int) get_post_thumbnail_id($post);
         if ($thumbId > 0) {
-            $featuredImageUrl = (string) wp_get_attachment_image_url($thumbId, 'medium');
+            $featuredImageUrl = (string) wp_get_attachment_url($thumbId);
         }
 
         $productGallery = $wpPostType === 'product'
@@ -561,10 +561,7 @@ final class Sync_Provider
                 continue;
             }
 
-            $url = (string) wp_get_attachment_image_url($attachmentId, 'woocommerce_thumbnail');
-            if ($url === '') {
-                $url = (string) wp_get_attachment_image_url($attachmentId, 'thumbnail');
-            }
+            $url = (string) wp_get_attachment_url($attachmentId);
             if ($url === '') {
                 continue;
             }
@@ -636,12 +633,7 @@ final class Sync_Provider
             return '';
         }
 
-        $url = (string) wp_get_attachment_image_url($thumbId, 'medium');
-        if ($url === '') {
-            $url = (string) wp_get_attachment_image_url($thumbId, 'full');
-        }
-
-        return $url;
+        return (string) wp_get_attachment_url($thumbId);
     }
 
     private function count_wp_admin_posts(string $postType): int

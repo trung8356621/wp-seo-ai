@@ -22,7 +22,13 @@ final class Polylang_Sync
      * @return array{
      *   active: bool,
      *   default: string,
-     *   languages: array<int, array{slug: string, name: string, locale: string}>
+     *   languages: array<int, array{
+     *     slug: string,
+     *     name: string,
+     *     locale: string,
+     *     url_prefix: string,
+     *     home_url: string
+     *   }>
      * }
      */
     public static function site_info(): array
@@ -45,6 +51,14 @@ final class Polylang_Sync
             }
         }
 
+        $hideDefault = true;
+        if (function_exists('PLL')) {
+            $pll = PLL();
+            if (is_object($pll) && isset($pll->options) && is_array($pll->options)) {
+                $hideDefault = ! empty($pll->options['hide_default']);
+            }
+        }
+
         $languages = [];
         if (function_exists('pll_languages_list')) {
             $slugs = pll_languages_list(['fields' => 'slug']);
@@ -60,10 +74,32 @@ final class Polylang_Sync
                     }
 
                     $seenSlugs[$slug] = true;
+                    $homeUrl = '';
+                    if (function_exists('pll_home_url')) {
+                        $homeUrl = rtrim((string) pll_home_url($slug), '/');
+                    }
+
+                    // Explicit WP routing prefix — never invent on Laravel side.
+                    // Default language with hide_default → empty prefix (root URLs).
+                    $urlPrefix = '';
+                    if ($slug === $default && $hideDefault) {
+                        $urlPrefix = '';
+                    } elseif ($homeUrl !== '') {
+                        $siteHome = rtrim((string) home_url('/'), '/');
+                        if (str_starts_with($homeUrl, $siteHome)) {
+                            $urlPrefix = trim(substr($homeUrl, strlen($siteHome)), '/');
+                        }
+                    } elseif ($slug !== $default || ! $hideDefault) {
+                        // Polylang slug is the rewrite segment when home_url unavailable.
+                        $urlPrefix = $slug;
+                    }
+
                     $languages[] = [
-                        'slug'   => $slug,
-                        'name'   => trim((string) ($names[$index] ?? $slug)),
-                        'locale' => trim((string) ($locales[$index] ?? $slug)),
+                        'slug'       => $slug,
+                        'name'       => trim((string) ($names[$index] ?? $slug)),
+                        'locale'     => trim((string) ($locales[$index] ?? $slug)),
+                        'url_prefix' => $urlPrefix,
+                        'home_url'   => $homeUrl !== '' ? $homeUrl . '/' : '',
                     ];
                 }
             }

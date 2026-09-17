@@ -38,6 +38,7 @@ function is_wp_error(mixed $value): bool
     return false;
 }
 
+require_once dirname(__DIR__).'/includes/class-polylang-sync.php';
 require_once dirname(__DIR__).'/includes/class-taxonomy-catalog.php';
 
 use OmiSeoAiBridge\Taxonomy_Catalog;
@@ -142,6 +143,39 @@ omi_assert(($ok['body']['taxonomy'] ?? '') === 'category' && isset($ok['body']['
 $keys = array_keys($ok['body']['items'][0]);
 sort($keys);
 omi_assert($keys === ['id', 'name', 'parent'], 'JSON item keys are only id/name/parent');
+
+$langMap = [
+    1 => 'vi',
+    2 => 'vi',
+    3 => 'en',
+];
+Taxonomy_Catalog::set_term_language_provider(static function (int $termId) use (&$langMap): string {
+    return $langMap[$termId] ?? '';
+});
+
+$viOnly = Taxonomy_Catalog::rest_payload('category', 'vi');
+omi_assert(count($viOnly['body']['items'] ?? []) === 2, 'lang=vi returns only Vietnamese terms');
+$viIds = array_column($viOnly['body']['items'], 'id');
+sort($viIds);
+omi_assert($viIds === [1, 2], 'VI filter keeps parent+child hierarchy ids');
+$viById = [];
+foreach ($viOnly['body']['items'] as $row) {
+    $viById[$row['id']] = $row;
+}
+omi_assert($viById[2]['parent'] === 1, 'VI child keeps WordPress parent id');
+
+$enOnly = Taxonomy_Catalog::rest_payload('category', 'en');
+omi_assert(count($enOnly['body']['items'] ?? []) === 1 && (int) $enOnly['body']['items'][0]['id'] === 3, 'lang=en excludes VI terms');
+
+$allStill = Taxonomy_Catalog::rest_payload('category');
+omi_assert(count($allStill['body']['items'] ?? []) === 3, 'no lang keeps backward-compatible all-term behavior');
+
+$vnAlias = Taxonomy_Catalog::rest_payload('category', 'vn');
+omi_assert(count($vnAlias['body']['items'] ?? []) === 2, 'vn normalizes to vi for filtering');
+
+Taxonomy_Catalog::set_term_language_provider(null);
+$noPoly = Taxonomy_Catalog::rest_payload('category', 'en');
+omi_assert(count($noPoly['body']['items'] ?? []) === 3, 'without Polylang provider, lang filter is a no-op');
 
 $beforeCategory = Taxonomy_Catalog::rebuild_count('category');
 $beforeProduct = Taxonomy_Catalog::rebuild_count('product_cat');
