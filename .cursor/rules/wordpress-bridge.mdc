@@ -1,0 +1,15 @@
+---
+description: Apply when editing wp-seo-ai: WordPress bridge — WP-local execution; Laravel orchestrates
+alwaysApply: false
+---
+
+# wp-seo-ai — WordPress bridge
+
+- Plugin executes **WordPress-local** concerns (REST, content/media/SEO meta, local outbox).
+- Laravel (`omnichannel-client` + `seo-ops-addons`) remains orchestrator/manager for business workflow, publishing schedule, Site Sync orchestration.
+- Keep API/schema compatibility explicit; do not delete legacy auth/header fallbacks until callers are proven migrated.
+- Do **not** duplicate Laravel business rules into the plugin.
+- Do **not** treat `D:\work-bk\omnichannel-backend` as SoT (stale paths in older docs).
+- Version/package only when the user explicitly requests release. Skill: `plugin-release-package` (repo-local).
+
+Canonical: `AGENTS.md`, `docs/site_sync_v1_contract.json`.

@@ -875,8 +875,10 @@ final class Rest_Controller
             ], 400);
         }
 
+        $allowedRoles = ['featured_image', 'product_gallery'];
         $updated = [];
         $errors = [];
+        $skipped = [];
 
         foreach ($items as $item) {
             if (! is_array($item)) {
@@ -885,6 +887,26 @@ final class Rest_Controller
 
             $attachmentId = (int) ($item['attachment_id'] ?? 0);
             if ($attachmentId <= 0) {
+                continue;
+            }
+
+            $mediaRole = strtolower(trim((string) ($item['media_role'] ?? '')));
+            // Hard reject article body context — attachment_id alone is never enough.
+            if ($mediaRole === 'article_content' || $mediaRole === 'content' || $mediaRole === 'article' || $mediaRole === 'body') {
+                $errors[] = [
+                    'attachment_id' => $attachmentId,
+                    'media_role' => $mediaRole,
+                    'message' => 'media_role article_content cannot mutate WordPress attachment ALT.',
+                ];
+                continue;
+            }
+
+            if ($mediaRole !== '' && ! in_array($mediaRole, $allowedRoles, true)) {
+                $errors[] = [
+                    'attachment_id' => $attachmentId,
+                    'media_role' => $mediaRole,
+                    'message' => 'Unsupported media_role for attachment ALT update.',
+                ];
                 continue;
             }
 
@@ -898,7 +920,12 @@ final class Rest_Controller
             }
 
             $title = trim((string) ($item['title'] ?? ''));
-            $altText = trim((string) ($item['alt_text'] ?? $item['alt'] ?? ''));
+            $altText = trim((string) ($item['alt_text'] ?? $item['alt'] ?? $item['desired_alt'] ?? ''));
+            $fillOnlyIfEmpty = array_key_exists('fill_only_if_empty', $item)
+                ? (bool) $item['fill_only_if_empty']
+                : ($mediaRole !== '');
+
+            $currentAlt = trim((string) get_post_meta($attachmentId, '_wp_attachment_image_alt', true));
 
             if ($title !== '') {
                 wp_update_post([
@@ -907,14 +934,28 @@ final class Rest_Controller
                 ]);
             }
 
+            $altApplied = false;
             if ($altText !== '') {
-                update_post_meta($attachmentId, '_wp_attachment_image_alt', $altText);
+                if ($fillOnlyIfEmpty && $currentAlt !== '') {
+                    $skipped[] = [
+                        'attachment_id' => $attachmentId,
+                        'media_role' => $mediaRole,
+                        'reason' => 'existing_alt_preserved',
+                        'alt_text' => $currentAlt,
+                    ];
+                } else {
+                    update_post_meta($attachmentId, '_wp_attachment_image_alt', $altText);
+                    $altApplied = true;
+                    $currentAlt = $altText;
+                }
             }
 
             $updated[] = [
                 'attachment_id' => $attachmentId,
+                'media_role' => $mediaRole,
                 'title' => $title !== '' ? $title : get_the_title($attachmentId),
-                'alt_text' => $altText !== '' ? $altText : (string) get_post_meta($attachmentId, '_wp_attachment_image_alt', true),
+                'alt_text' => $currentAlt,
+                'alt_applied' => $altApplied,
             ];
         }
 
@@ -926,6 +967,7 @@ final class Rest_Controller
             'updated_count' => $updatedCount,
             'error_count' => $errorCount,
             'updated' => $updated,
+            'skipped' => $skipped,
             'errors' => $errors,
         ], $errorCount > 0 && $updatedCount === 0 ? 422 : 200);
     }
