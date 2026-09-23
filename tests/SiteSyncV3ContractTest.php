@@ -126,6 +126,29 @@ omi_v3_assert(
 );
 
 omi_v3_assert(
+    str_contains($providerSrc, 'by_native_post_type'),
+    'discover exposes by_native_post_type'
+);
+omi_v3_assert(
+    str_contains($providerSrc, 'function count_content_inventory'),
+    'count_content_inventory replaces wp_count_posts aggregate'
+);
+omi_v3_assert(
+    str_contains($providerSrc, 'GROUP BY post_type'),
+    'content inventory counts GROUP BY post_type'
+);
+omi_v3_assert(
+    ! preg_match('/function\s+count_by_content_type[\s\S]*?wp_count_posts\s*\(/', $providerSrc),
+    'count_by_content_type path does not call wp_count_posts'
+);
+// Predicate parity: inventory COUNT uses same status/type lists as query_content_full.
+omi_v3_assert(
+    str_contains($providerSrc, 'CONTENT_STATUSES')
+    && substr_count($providerSrc, 'syncable_post_type_slugs') >= 2,
+    'inventory count and records share syncable types + CONTENT_STATUSES'
+);
+
+omi_v3_assert(
     str_contains($bootstrapSrc, 'class-site-sync-v3-provider.php'),
     'bootstrap requires v3 provider after v2'
 );

@@ -47,8 +47,10 @@ final class Site_Sync_V3_Provider
     {
         $snapshotAt = gmdate('c');
         $generatedAt = $snapshotAt;
-        $byContentType = $this->count_by_content_type();
-        $contentTotal = array_sum($byContentType);
+        $inventory = $this->count_content_inventory();
+        $byNativePostType = $inventory['by_native_post_type'];
+        $byContentType = $inventory['by_content_type'];
+        $contentTotal = (int) $inventory['total'];
         $termsTotal = $this->count_terms();
         $total = $contentTotal + $termsTotal;
         $bridgeVersion = defined('OMI_SEO_AI_BRIDGE_VERSION') ? (string) OMI_SEO_AI_BRIDGE_VERSION : '';
@@ -72,6 +74,7 @@ final class Site_Sync_V3_Provider
             'snapshot_bounds' => $bounds,
             'total' => $total,
             'by_content_type' => $byContentType,
+            'by_native_post_type' => $byNativePostType,
             'resources' => [
                 'content' => ['total' => $contentTotal],
                 'terms' => ['total' => $termsTotal],
@@ -810,29 +813,91 @@ final class Site_Sync_V3_Provider
     }
 
     /**
+     * Content inventory counts using the SAME post_type + post_status predicate
+     * as {@see query_content_full()} / FULL records enumeration.
+     *
+     * Do not use wp_count_posts() — it can diverge (filters, caches, status buckets).
+     *
+     * @return array{
+     *   total: int,
+     *   by_native_post_type: array<string, int>,
+     *   by_content_type: array{post: int, page: int, product: int}
+     * }
+     */
+    private function count_content_inventory(): array
+    {
+        global $wpdb;
+
+        $byNative = [];
+        $byContent = ['post' => 0, 'page' => 0, 'product' => 0];
+
+        $types = Site_Sync_V2_Provider::syncable_post_type_slugs() ?: ['post', 'page', 'product'];
+        $statuses = self::CONTENT_STATUSES;
+        if ($types === [] || $statuses === []) {
+            return [
+                'total' => 0,
+                'by_native_post_type' => $byNative,
+                'by_content_type' => $byContent,
+            ];
+        }
+
+        $typePlaceholders = implode(',', array_fill(0, count($types), '%s'));
+        $statusPlaceholders = implode(',', array_fill(0, count($statuses), '%s'));
+
+        $sql = "SELECT post_type, COUNT(*) AS cnt FROM {$wpdb->posts}
+            WHERE post_type IN ({$typePlaceholders})
+            AND post_status IN ({$statusPlaceholders})
+            GROUP BY post_type";
+        $prepared = $wpdb->prepare($sql, array_merge($types, $statuses));
+        if (! is_string($prepared)) {
+            return [
+                'total' => 0,
+                'by_native_post_type' => $byNative,
+                'by_content_type' => $byContent,
+            ];
+        }
+
+        $rows = $wpdb->get_results($prepared, ARRAY_A);
+        if (! is_array($rows)) {
+            $rows = [];
+        }
+
+        $total = 0;
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $postType = strtolower(trim((string) ($row['post_type'] ?? '')));
+            $cnt = (int) ($row['cnt'] ?? 0);
+            if ($postType === '' || $cnt <= 0) {
+                continue;
+            }
+            $byNative[$postType] = ($byNative[$postType] ?? 0) + $cnt;
+            $bucket = Content_Type_Map::resolve_content_type($postType);
+            if (! isset($byContent[$bucket])) {
+                $byContent[$bucket] = 0;
+            }
+            $byContent[$bucket] += $cnt;
+            $total += $cnt;
+        }
+
+        ksort($byNative);
+
+        return [
+            'total' => $total,
+            'by_native_post_type' => $byNative,
+            'by_content_type' => $byContent,
+        ];
+    }
+
+    /**
+     * @deprecated Use {@see count_content_inventory()} — kept as thin alias for callers/tests.
+     *
      * @return array<string, int>
      */
     private function count_by_content_type(): array
     {
-        $by = ['post' => 0, 'page' => 0, 'product' => 0];
-        $slugs = Site_Sync_V2_Provider::syncable_post_type_slugs() ?: ['post', 'page', 'product'];
-        foreach ($slugs as $postType) {
-            $counts = wp_count_posts($postType);
-            if (! is_object($counts)) {
-                continue;
-            }
-            $n = 0;
-            foreach (self::CONTENT_STATUSES as $status) {
-                $n += (int) ($counts->{$status} ?? 0);
-            }
-            $bucket = Content_Type_Map::resolve_content_type((string) $postType);
-            if (! isset($by[$bucket])) {
-                $by[$bucket] = 0;
-            }
-            $by[$bucket] += $n;
-        }
-
-        return $by;
+        return $this->count_content_inventory()['by_content_type'];
     }
 
     private function count_terms(): int
