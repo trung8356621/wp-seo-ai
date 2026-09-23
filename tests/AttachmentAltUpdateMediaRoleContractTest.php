@@ -40,11 +40,18 @@ if ($handlerPos === false || $articleRejectPos === false || $articleRejectPos < 
 }
 
 $bridge = (string) file_get_contents($root . '/omi-seo-ai-bridge.php');
-if (! preg_match('/Version:\s+1\.0\.88/', $bridge)) {
-    $failures[] = 'Plugin header Version must be 1.0.88';
+if (! defined('ABSPATH')) {
+    define('ABSPATH', $root.DIRECTORY_SEPARATOR);
 }
-if (! str_contains($bridge, "define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.88')")) {
-    $failures[] = 'OMI_SEO_AI_BRIDGE_VERSION must be 1.0.88';
+require_once $root.'/includes/class-github-release-client.php';
+require_once $root.'/includes/class-release-package.php';
+$versions = OmiSeoAiBridge\Release_Package::read_source_versions($root);
+if (($versions['header'] ?? '') === '' || ($versions['constant'] ?? '') === '') {
+    $failures[] = 'Plugin Version header / OMI_SEO_AI_BRIDGE_VERSION missing';
+} elseif ($versions['header'] !== $versions['constant']) {
+    $failures[] = 'Version SSOT mismatch: header='.$versions['header'].' constant='.$versions['constant'];
+} elseif (! preg_match('/Version:\s+'.preg_quote($versions['header'], '/').'/', $bridge)) {
+    $failures[] = 'Plugin header Version not found in main file';
 }
 
 if ($failures !== []) {

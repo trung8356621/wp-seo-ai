@@ -41,7 +41,7 @@ if (defined('OMI_SEO_AI_BRIDGE_LOADED')) {
 }
 
 define('OMI_SEO_AI_BRIDGE_LOADED', true);
-define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.88');
+define('OMI_SEO_AI_BRIDGE_VERSION', '1.0.89');
 define('OMI_SEO_AI_BRIDGE_SLUG', 'wp-seo-ai');
 define('OMI_SEO_AI_BRIDGE_OPTION_READ', 'omi_seo_read_token');
 define('OMI_SEO_AI_BRIDGE_OPTION_WRITE', 'omi_seo_write_token');
