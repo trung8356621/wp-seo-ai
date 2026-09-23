@@ -37,13 +37,16 @@ omi_rel_assert($versions['constant'] !== '', 'OMI_SEO_AI_BRIDGE_VERSION present'
 omi_rel_assert($versions['header'] === $versions['constant'], 'header Version == constant');
 omi_rel_assert(Release_Package::parse_version_arg($versions['header']) !== null, 'header version is x.y.z');
 
+$distRoot = Release_Package::default_dist_root($root);
+$pluginNorm = rtrim(str_replace('\\', '/', $root), '/').'/';
+$distNorm = rtrim(str_replace('\\', '/', $distRoot), '/').'/';
 omi_rel_assert(
-    Release_Package::default_dist_root($root) === 'D:/work/build'
-    || str_ends_with(Release_Package::default_dist_root($root), '/build'),
+    $distRoot === 'D:/work/build'
+    || str_ends_with(rtrim(str_replace('\\', '/', $distRoot), '/'), '/build'),
     'default dist root is D:/work/build (outside plugin)',
 );
 omi_rel_assert(
-    ! str_contains(Release_Package::default_dist_root($root), '/wp-seo-ai/'),
+    ! str_starts_with($distNorm, $pluginNorm),
     'default dist root is not inside plugin tree',
 );
 
