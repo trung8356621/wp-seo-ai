@@ -412,16 +412,34 @@ final class Site_Sync_V2_Provider
         $byType = [];
         $total = 0;
         $slugs = self::syncable_post_type_slugs() ?: ['post', 'page', 'product'];
+        $eligibleStatuses = ['publish', 'draft', 'pending', 'private', 'future'];
         foreach ($slugs as $postType) {
             $counts = wp_count_posts($postType);
             if (! is_object($counts)) {
                 continue;
             }
-            foreach (['publish', 'draft', 'pending', 'private', 'future'] as $status) {
+            foreach ($eligibleStatuses as $status) {
                 $n = (int) ($counts->{$status} ?? 0);
-                $byType[$postType] += $n;
+                $byType[$postType] = ($byType[$postType] ?? 0) + $n;
                 $total += $n;
             }
+        }
+
+        // Same membership as lightweight_manifest() / Sync_Provider::is_sync_excluded_post().
+        foreach (Sync_Provider::sync_excluded_post_ids() as $excludedId) {
+            $post = get_post($excludedId);
+            if (! $post instanceof \WP_Post) {
+                continue;
+            }
+            if (! in_array((string) $post->post_status, $eligibleStatuses, true)) {
+                continue;
+            }
+            $postType = (string) $post->post_type;
+            if (($byType[$postType] ?? 0) <= 0) {
+                continue;
+            }
+            $byType[$postType]--;
+            $total--;
         }
 
         return [

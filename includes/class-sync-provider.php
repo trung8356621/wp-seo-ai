@@ -11,7 +11,36 @@ if (! defined('ABSPATH')) {
 final class Sync_Provider
 {
     /**
-     * Trang tĩnh được chọn làm trang chủ (Cài đặt → Đọc) — không đẩy lên Laravel.
+     * Canonical post IDs excluded from Site Sync (discover counts, FULL/delta
+     * enumeration, manifests, push). Today: static front page when
+     * show_on_front=page. Extend this list — do not re-implement exclusions
+     * in V2/V3 count queries.
+     *
+     * @return list<int>
+     */
+    public static function sync_excluded_post_ids(): array
+    {
+        $ids = [];
+
+        // Trang tĩnh được chọn làm trang chủ (Cài đặt → Đọc) — không đẩy lên Laravel.
+        if ((string) get_option('show_on_front') === 'page') {
+            $frontPageId = (int) get_option('page_on_front');
+            if ($frontPageId > 0) {
+                $ids[] = $frontPageId;
+            }
+        }
+
+        $ids = array_values(array_unique(array_filter(
+            $ids,
+            static fn (int $id): bool => $id > 0
+        )));
+
+        return $ids;
+    }
+
+    /**
+     * Whether a post is outside the Site Sync membership universe.
+     * Delegates to {@see sync_excluded_post_ids()} — single SSOT.
      */
     public static function is_sync_excluded_post(int $postId): bool
     {
@@ -19,13 +48,7 @@ final class Sync_Provider
             return false;
         }
 
-        if ((string) get_option('show_on_front') !== 'page') {
-            return false;
-        }
-
-        $frontPageId = (int) get_option('page_on_front');
-
-        return $frontPageId > 0 && $postId === $frontPageId;
+        return in_array($postId, self::sync_excluded_post_ids(), true);
     }
 
     /**

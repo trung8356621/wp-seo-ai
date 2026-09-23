@@ -147,6 +147,11 @@ omi_v3_assert(
     && substr_count($providerSrc, 'syncable_post_type_slugs') >= 2,
     'inventory count and records share syncable types + CONTENT_STATUSES'
 );
+omi_v3_assert(
+    str_contains($providerSrc, 'sql_excluded_post_ids_fragment')
+    && str_contains($providerSrc, 'Sync_Provider::sync_excluded_post_ids()'),
+    'inventory/FULL/delta share sync_excluded_post_ids SSOT via SQL fragment'
+);
 
 omi_v3_assert(
     str_contains($bootstrapSrc, 'class-site-sync-v3-provider.php'),

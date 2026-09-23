@@ -659,6 +659,8 @@ final class Site_Sync_V3_Provider
 
     /**
      * FULL keyset: ID > after_id AND ID <= max_id ORDER BY ID ASC LIMIT n.
+     * Applies {@see Sync_Provider::sync_excluded_post_ids()} in SQL so pagination
+     * batches fill with eligible rows (defensive PHP skip remains in callers).
      *
      * @return list<array{ID:int|string,post_type:string,post_status:string}>
      */
@@ -674,16 +676,18 @@ final class Site_Sync_V3_Provider
         $statuses = self::CONTENT_STATUSES;
         $typePlaceholders = implode(',', array_fill(0, count($types), '%s'));
         $statusPlaceholders = implode(',', array_fill(0, count($statuses), '%s'));
+        $exclude = $this->sql_excluded_post_ids_fragment();
 
         $sql = "SELECT ID, post_type, post_status FROM {$wpdb->posts}
             WHERE ID > %d
             AND ID <= %d
             AND post_type IN ({$typePlaceholders})
             AND post_status IN ({$statusPlaceholders})
+            {$exclude['sql']}
             ORDER BY ID ASC
             LIMIT %d";
 
-        $params = array_merge([$afterId, $maxId], $types, $statuses, [$limit]);
+        $params = array_merge([$afterId, $maxId], $types, $statuses, $exclude['params'], [$limit]);
         $prepared = $wpdb->prepare($sql, $params);
         if (! is_string($prepared)) {
             return [];
@@ -710,6 +714,7 @@ final class Site_Sync_V3_Provider
         $statuses = array_merge(self::CONTENT_STATUSES, ['trash']);
         $typePlaceholders = implode(',', array_fill(0, count($types), '%s'));
         $statusPlaceholders = implode(',', array_fill(0, count($statuses), '%s'));
+        $exclude = $this->sql_excluded_post_ids_fragment();
 
         $sinceGmt = $this->normalize_since_gmt($since);
         $afterModifiedGmt = trim($afterModifiedGmt);
@@ -720,6 +725,7 @@ final class Site_Sync_V3_Provider
         $sql = "SELECT ID, post_type, post_status, post_modified_gmt FROM {$wpdb->posts}
             WHERE post_type IN ({$typePlaceholders})
             AND post_status IN ({$statusPlaceholders})
+            {$exclude['sql']}
             AND post_modified_gmt >= %s
             AND (
                 post_modified_gmt > %s
@@ -728,7 +734,12 @@ final class Site_Sync_V3_Provider
             ORDER BY post_modified_gmt ASC, ID ASC
             LIMIT %d";
 
-        $params = array_merge($types, $statuses, [$sinceGmt, $afterModifiedGmt, $afterModifiedGmt, $afterId, $limit]);
+        $params = array_merge(
+            $types,
+            $statuses,
+            $exclude['params'],
+            [$sinceGmt, $afterModifiedGmt, $afterModifiedGmt, $afterId, $limit]
+        );
         $prepared = $wpdb->prepare($sql, $params);
         if (! is_string($prepared)) {
             return [];
@@ -813,10 +824,12 @@ final class Site_Sync_V3_Provider
     }
 
     /**
-     * Content inventory counts using the SAME post_type + post_status predicate
-     * as {@see query_content_full()} / FULL records enumeration.
+     * Content inventory counts using the SAME post_type + post_status + exclusion
+     * predicate as {@see query_content_full()} / FULL records enumeration.
      *
      * Do not use wp_count_posts() — it can diverge (filters, caches, status buckets).
+     * Must exclude {@see Sync_Provider::sync_excluded_post_ids()} (e.g. static front page)
+     * or discover totals permanently drift +1 vs Laravel after a successful sync.
      *
      * @return array{
      *   total: int,
@@ -843,12 +856,14 @@ final class Site_Sync_V3_Provider
 
         $typePlaceholders = implode(',', array_fill(0, count($types), '%s'));
         $statusPlaceholders = implode(',', array_fill(0, count($statuses), '%s'));
+        $exclude = $this->sql_excluded_post_ids_fragment();
 
         $sql = "SELECT post_type, COUNT(*) AS cnt FROM {$wpdb->posts}
             WHERE post_type IN ({$typePlaceholders})
             AND post_status IN ({$statusPlaceholders})
+            {$exclude['sql']}
             GROUP BY post_type";
-        $prepared = $wpdb->prepare($sql, array_merge($types, $statuses));
+        $prepared = $wpdb->prepare($sql, array_merge($types, $statuses, $exclude['params']));
         if (! is_string($prepared)) {
             return [
                 'total' => 0,
@@ -887,6 +902,26 @@ final class Site_Sync_V3_Provider
             'total' => $total,
             'by_native_post_type' => $byNative,
             'by_content_type' => $byContent,
+        ];
+    }
+
+    /**
+     * SQL fragment + bound params for canonical sync exclusions.
+     *
+     * @return array{sql: string, params: list<int>}
+     */
+    private function sql_excluded_post_ids_fragment(): array
+    {
+        $ids = Sync_Provider::sync_excluded_post_ids();
+        if ($ids === []) {
+            return ['sql' => '', 'params' => []];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+
+        return [
+            'sql' => "AND ID NOT IN ({$placeholders})",
+            'params' => $ids,
         ];
     }
 
