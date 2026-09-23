@@ -89,9 +89,39 @@ if (preg_match(
     omi_v3_assert(str_contains($builderBody, "'op' => 'upsert'"), 'build_content_upsert emits upsert');
     omi_v3_assert(str_contains($builderBody, "'links'"), 'build_content_upsert includes links');
     omi_v3_assert(str_contains($builderBody, "'analysis'"), 'build_content_upsert includes analysis');
+    omi_v3_assert(
+        str_contains($builderBody, 'multilingual')
+        && str_contains($builderBody, 'multilingual_field_for_post'),
+        'build_content_upsert includes multilingual via Polylang helper'
+    );
 } else {
     omi_v3_assert(false, 'build_content_upsert method found');
 }
+
+omi_v3_assert(
+    str_contains($providerSrc, 'by_language')
+    && str_contains($providerSrc, "'multilingual'"),
+    'discover exposes multilingual + by_language'
+);
+omi_v3_assert(
+    str_contains($providerSrc, 'sql_posts_language_fragment')
+    || str_contains($providerSrc, 'sql_posts_language_exists_fragment'),
+    'V3 content queries support language scope'
+);
+omi_v3_assert(
+    str_contains($restSrc, "'language'")
+    && str_contains($restSrc, 'handle_sync_v3_discover'),
+    'REST V3 discover/records forward language'
+);
+
+$changeLogPath = $root.'/includes/class-site-sync-change-log.php';
+omi_v3_assert(is_file($changeLogPath), 'Site_Sync_Change_Log file exists');
+$changeLogSrc = (string) file_get_contents($changeLogPath);
+omi_v3_assert(
+    str_contains($changeLogSrc, 'multilingual_metadata_for_post')
+    && str_contains($changeLogSrc, 'row_matches_language'),
+    'change-log tombstones preserve language identity'
+);
 
 omi_v3_assert(
     str_contains($providerSrc, 'after_id') && str_contains($providerSrc, 'after_term_id'),

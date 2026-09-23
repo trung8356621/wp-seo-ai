@@ -41,10 +41,17 @@ final class Site_Sync_V3_Provider
     private const CONTENT_STATUSES = ['publish', 'draft', 'pending', 'private', 'future'];
 
     /**
+     * Canonical Polylang language scope for this request (empty = unscoped / single-language).
+     */
+    private string $language_scope = '';
+
+    /**
+     * @param  array<string, mixed>  $args  Optional: language (canonical Polylang slug)
      * @return array<string, mixed>
      */
-    public function discover(): array
+    public function discover(array $args = []): array
     {
+        $this->language_scope = $this->normalize_language_arg($args['language'] ?? $args['lang'] ?? '');
         $snapshotAt = gmdate('c');
         $generatedAt = $snapshotAt;
         $inventory = $this->count_content_inventory();
@@ -55,15 +62,35 @@ final class Site_Sync_V3_Provider
         $total = $contentTotal + $termsTotal;
         $bridgeVersion = defined('OMI_SEO_AI_BRIDGE_VERSION') ? (string) OMI_SEO_AI_BRIDGE_VERSION : '';
         $bounds = $this->compute_snapshot_bounds();
+        $polylang = Polylang_Sync::site_info();
+        $byLanguage = [];
+        if (($polylang['active'] ?? false) === true) {
+            $exclude = $this->sql_excluded_post_ids_fragment();
+            $types = Site_Sync_V2_Provider::syncable_post_type_slugs() ?: ['post', 'page', 'product'];
+            $byLanguage = Polylang_Sync::count_content_by_language($types, self::CONTENT_STATUSES, $exclude);
+        }
         $siteRevision = hash(
             'sha256',
             $snapshotAt.'|'.$total.'|'.$contentTotal.'|'.$termsTotal.'|'
             .$bounds['content_max_id'].'|'.$bounds['term_max_id'].'|'.$bridgeVersion
+            .'|'.$this->language_scope
         );
 
         $manifest = Capability_Manifest::build();
         $capabilities = is_array($manifest['capabilities'] ?? null) ? $manifest['capabilities'] : [];
         $info = Seo_Plugin_Resolver::site_info();
+
+        $languageSlugs = [];
+        foreach (is_array($polylang['languages'] ?? null) ? $polylang['languages'] : [] as $langRow) {
+            if (! is_array($langRow)) {
+                continue;
+            }
+            $slug = Polylang_Sync::normalize_language_slug(trim((string) ($langRow['slug'] ?? '')));
+            if ($slug !== '') {
+                $languageSlugs[] = $slug;
+            }
+        }
+        $languageSlugs = array_values(array_unique($languageSlugs));
 
         return [
             'schema' => self::SCHEMA,
@@ -75,6 +102,13 @@ final class Site_Sync_V3_Provider
             'total' => $total,
             'by_content_type' => $byContentType,
             'by_native_post_type' => $byNativePostType,
+            'language' => $this->language_scope !== '' ? $this->language_scope : null,
+            'multilingual' => [
+                'active' => (bool) ($polylang['active'] ?? false),
+                'default' => (string) ($polylang['default'] ?? 'vi'),
+                'languages' => $languageSlugs,
+            ],
+            'by_language' => $byLanguage,
             'resources' => [
                 'content' => ['total' => $contentTotal],
                 'terms' => ['total' => $termsTotal],
@@ -95,6 +129,7 @@ final class Site_Sync_V3_Provider
      */
     public function records(array $args): array
     {
+        $this->language_scope = $this->normalize_language_arg($args['language'] ?? $args['lang'] ?? '');
         $resource = (string) ($args['resource'] ?? '');
         $mode = (string) ($args['mode'] ?? 'full');
         $limit = (int) ($args['limit'] ?? self::DEFAULT_LIMIT);
@@ -237,7 +272,8 @@ final class Site_Sync_V3_Provider
                 $sinceGmt,
                 $afterChangeId,
                 $limit,
-                Site_Sync_Change_Log::OP_DELETE
+                Site_Sync_Change_Log::OP_DELETE,
+                $this->language_scope !== '' ? $this->language_scope : null
             );
             foreach ($ledgerRows as $row) {
                 $item = Site_Sync_Change_Log::row_to_item($row);
@@ -297,6 +333,7 @@ final class Site_Sync_V3_Provider
                         'content_type' => Content_Type_Map::resolve_content_type((string) ($row['post_type'] ?? '')),
                         'wp_is_term' => false,
                         'status' => 'trash',
+                        'multilingual' => Polylang_Sync::multilingual_field_for_post($postId),
                     ];
                     $afterId = $postId;
                     $afterModifiedGmt = $modifiedGmt;
@@ -569,6 +606,7 @@ final class Site_Sync_V3_Provider
             'status' => (string) $post->post_status,
             'modified_gmt' => (string) $post->post_modified_gmt,
             'content_hash' => $contentHash,
+            'multilingual' => Polylang_Sync::multilingual_field_for_post($postId),
             'taxonomy' => $taxonomies,
             'seo' => [
                 'provider' => $provider,
@@ -618,11 +656,13 @@ final class Site_Sync_V3_Provider
         $statuses = self::CONTENT_STATUSES;
         $typePlaceholders = implode(',', array_fill(0, count($types), '%s'));
         $statusPlaceholders = implode(',', array_fill(0, count($statuses), '%s'));
+        $lang = $this->sql_posts_language_fragment("{$wpdb->posts}.ID");
 
         $sql = "SELECT COALESCE(MAX(ID), 0) FROM {$wpdb->posts}
             WHERE post_type IN ({$typePlaceholders})
-            AND post_status IN ({$statusPlaceholders})";
-        $prepared = $wpdb->prepare($sql, array_merge($types, $statuses));
+            AND post_status IN ({$statusPlaceholders})
+            {$lang['sql']}";
+        $prepared = $wpdb->prepare($sql, array_merge($types, $statuses, $lang['params']));
         $contentMax = is_string($prepared) ? (int) $wpdb->get_var($prepared) : 0;
 
         $taxonomies = $this->syncable_taxonomies();
@@ -677,6 +717,7 @@ final class Site_Sync_V3_Provider
         $typePlaceholders = implode(',', array_fill(0, count($types), '%s'));
         $statusPlaceholders = implode(',', array_fill(0, count($statuses), '%s'));
         $exclude = $this->sql_excluded_post_ids_fragment();
+        $lang = $this->sql_posts_language_fragment("{$wpdb->posts}.ID");
 
         $sql = "SELECT ID, post_type, post_status FROM {$wpdb->posts}
             WHERE ID > %d
@@ -684,10 +725,11 @@ final class Site_Sync_V3_Provider
             AND post_type IN ({$typePlaceholders})
             AND post_status IN ({$statusPlaceholders})
             {$exclude['sql']}
+            {$lang['sql']}
             ORDER BY ID ASC
             LIMIT %d";
 
-        $params = array_merge([$afterId, $maxId], $types, $statuses, $exclude['params'], [$limit]);
+        $params = array_merge([$afterId, $maxId], $types, $statuses, $exclude['params'], $lang['params'], [$limit]);
         $prepared = $wpdb->prepare($sql, $params);
         if (! is_string($prepared)) {
             return [];
@@ -715,6 +757,7 @@ final class Site_Sync_V3_Provider
         $typePlaceholders = implode(',', array_fill(0, count($types), '%s'));
         $statusPlaceholders = implode(',', array_fill(0, count($statuses), '%s'));
         $exclude = $this->sql_excluded_post_ids_fragment();
+        $lang = $this->sql_posts_language_fragment("{$wpdb->posts}.ID");
 
         $sinceGmt = $this->normalize_since_gmt($since);
         $afterModifiedGmt = trim($afterModifiedGmt);
@@ -726,6 +769,7 @@ final class Site_Sync_V3_Provider
             WHERE post_type IN ({$typePlaceholders})
             AND post_status IN ({$statusPlaceholders})
             {$exclude['sql']}
+            {$lang['sql']}
             AND post_modified_gmt >= %s
             AND (
                 post_modified_gmt > %s
@@ -738,6 +782,7 @@ final class Site_Sync_V3_Provider
             $types,
             $statuses,
             $exclude['params'],
+            $lang['params'],
             [$sinceGmt, $afterModifiedGmt, $afterModifiedGmt, $afterId, $limit]
         );
         $prepared = $wpdb->prepare($sql, $params);
@@ -857,13 +902,15 @@ final class Site_Sync_V3_Provider
         $typePlaceholders = implode(',', array_fill(0, count($types), '%s'));
         $statusPlaceholders = implode(',', array_fill(0, count($statuses), '%s'));
         $exclude = $this->sql_excluded_post_ids_fragment();
+        $lang = $this->sql_posts_language_fragment("{$wpdb->posts}.ID");
 
         $sql = "SELECT post_type, COUNT(*) AS cnt FROM {$wpdb->posts}
             WHERE post_type IN ({$typePlaceholders})
             AND post_status IN ({$statusPlaceholders})
             {$exclude['sql']}
+            {$lang['sql']}
             GROUP BY post_type";
-        $prepared = $wpdb->prepare($sql, array_merge($types, $statuses, $exclude['params']));
+        $prepared = $wpdb->prepare($sql, array_merge($types, $statuses, $exclude['params'], $lang['params']));
         if (! is_string($prepared)) {
             return [
                 'total' => 0,
@@ -923,6 +970,19 @@ final class Site_Sync_V3_Provider
             'sql' => "AND ID NOT IN ({$placeholders})",
             'params' => $ids,
         ];
+    }
+
+    /**
+     * @return array{sql: string, params: list<string>}
+     */
+    private function sql_posts_language_fragment(string $postsIdExpr): array
+    {
+        return Polylang_Sync::sql_posts_language_exists_fragment($postsIdExpr, $this->language_scope);
+    }
+
+    private function normalize_language_arg(mixed $raw): string
+    {
+        return Polylang_Sync::normalize_language_slug(trim((string) $raw));
     }
 
     /**

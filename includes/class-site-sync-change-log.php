@@ -136,11 +136,14 @@ final class Site_Sync_Change_Log
             $postId,
             (string) $post->post_type,
             self::OP_DELETE,
-            [
-                'content_type' => Content_Type_Map::resolve_content_type((string) $post->post_type),
-                'status' => (string) $post->post_status,
-                'source' => 'before_delete_post',
-            ]
+            array_merge(
+                [
+                    'content_type' => Content_Type_Map::resolve_content_type((string) $post->post_type),
+                    'status' => (string) $post->post_status,
+                    'source' => 'before_delete_post',
+                ],
+                self::multilingual_metadata_for_post($postId)
+            )
         );
     }
 
@@ -166,11 +169,14 @@ final class Site_Sync_Change_Log
             $postId,
             (string) $post->post_type,
             self::OP_DELETE,
-            [
-                'content_type' => Content_Type_Map::resolve_content_type((string) $post->post_type),
-                'status' => 'trash',
-                'source' => 'wp_trash_post',
-            ]
+            array_merge(
+                [
+                    'content_type' => Content_Type_Map::resolve_content_type((string) $post->post_type),
+                    'status' => 'trash',
+                    'source' => 'wp_trash_post',
+                ],
+                self::multilingual_metadata_for_post($postId)
+            )
         );
     }
 
@@ -289,6 +295,10 @@ final class Site_Sync_Change_Log
     /**
      * Keyset: id > after_change_id AND changed_at >= sinceGmt, ORDER BY id ASC.
      *
+     * When $language is set, only rows whose metadata language matches (canonical)
+     * are returned. Rows without language metadata are skipped under scoped queries
+     * so a VI run never consumes an EN tombstone (or ambiguous legacy tombstones).
+     *
      * @return list<array<string, mixed>>
      */
     public static function query_since(
@@ -296,10 +306,17 @@ final class Site_Sync_Change_Log
         string $sinceGmt,
         int $afterChangeId,
         int $limit,
-        ?string $operation = null
+        ?string $operation = null,
+        ?string $language = null
     ): array {
         $limit = max(1, min(100, $limit));
         $afterChangeId = max(0, $afterChangeId);
+        $language = $language !== null
+            ? Polylang_Sync::normalize_language_slug(trim($language))
+            : '';
+
+        // Fetch a wider window when language-filtering in PHP (metadata not indexed).
+        $fetchLimit = $language !== '' ? min(500, max($limit * 10, $limit)) : $limit;
 
         if (self::$memoryRows !== null) {
             $out = [];
@@ -314,6 +331,9 @@ final class Site_Sync_Change_Log
                     continue;
                 }
                 if ($operation !== null && (string) ($row['operation'] ?? '') !== $operation) {
+                    continue;
+                }
+                if ($language !== '' && ! self::row_matches_language($row, $language)) {
                     continue;
                 }
                 $out[] = $row;
@@ -334,7 +354,7 @@ final class Site_Sync_Change_Log
                 AND changed_at >= %s
                 ORDER BY id ASC
                 LIMIT %d";
-            $prepared = $wpdb->prepare($sql, [$resource, $operation, $afterChangeId, $sinceGmt, $limit]);
+            $prepared = $wpdb->prepare($sql, [$resource, $operation, $afterChangeId, $sinceGmt, $fetchLimit]);
         } else {
             $sql = "SELECT id, resource, object_id, object_type, operation, changed_at, metadata_json
                 FROM {$table}
@@ -343,7 +363,7 @@ final class Site_Sync_Change_Log
                 AND changed_at >= %s
                 ORDER BY id ASC
                 LIMIT %d";
-            $prepared = $wpdb->prepare($sql, [$resource, $afterChangeId, $sinceGmt, $limit]);
+            $prepared = $wpdb->prepare($sql, [$resource, $afterChangeId, $sinceGmt, $fetchLimit]);
         }
 
         if (! is_string($prepared)) {
@@ -351,8 +371,29 @@ final class Site_Sync_Change_Log
         }
 
         $rows = $wpdb->get_results($prepared, ARRAY_A);
+        if (! is_array($rows)) {
+            return [];
+        }
 
-        return is_array($rows) ? $rows : [];
+        if ($language === '') {
+            return array_slice($rows, 0, $limit);
+        }
+
+        $filtered = [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            if (! self::row_matches_language($row, $language)) {
+                continue;
+            }
+            $filtered[] = $row;
+            if (count($filtered) >= $limit) {
+                break;
+            }
+        }
+
+        return $filtered;
     }
 
     public static function cleanup_expired(): void
@@ -418,6 +459,14 @@ final class Site_Sync_Change_Log
                 $item['wp_is_term'] = false;
                 $item['content_type'] = (string) ($meta['content_type'] ?? Content_Type_Map::resolve_content_type($objectType));
             }
+            if (isset($meta['multilingual']) && is_array($meta['multilingual'])) {
+                $item['multilingual'] = $meta['multilingual'];
+            } elseif (isset($meta['language']) && is_string($meta['language']) && $meta['language'] !== '') {
+                $item['multilingual'] = [
+                    'current_lang' => Polylang_Sync::normalize_language_slug($meta['language']),
+                    'translations' => [],
+                ];
+            }
 
             return $item;
         }
@@ -435,5 +484,47 @@ final class Site_Sync_Change_Log
         }
 
         return null;
+    }
+
+    /**
+     * @return array{language?: string, multilingual?: array{current_lang: string, translations: array<string, int>}}
+     */
+    private static function multilingual_metadata_for_post(int $postId): array
+    {
+        $multilingual = Polylang_Sync::multilingual_field_for_post($postId);
+        $lang = Polylang_Sync::normalize_language_slug((string) ($multilingual['current_lang'] ?? ''));
+        if ($lang === '') {
+            return [];
+        }
+
+        return [
+            'language' => $lang,
+            'multilingual' => $multilingual,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private static function row_matches_language(array $row, string $canonicalLanguage): bool
+    {
+        $meta = [];
+        if (! empty($row['metadata_json']) && is_string($row['metadata_json'])) {
+            $decoded = json_decode($row['metadata_json'], true);
+            if (is_array($decoded)) {
+                $meta = $decoded;
+            }
+        }
+
+        $lang = '';
+        if (isset($meta['multilingual']) && is_array($meta['multilingual'])) {
+            $lang = Polylang_Sync::normalize_language_slug((string) ($meta['multilingual']['current_lang'] ?? ''));
+        }
+        if ($lang === '' && isset($meta['language'])) {
+            $lang = Polylang_Sync::normalize_language_slug((string) $meta['language']);
+        }
+
+        // Scoped runs skip ambiguous legacy tombstones (no language identity).
+        return $lang !== '' && $lang === $canonicalLanguage;
     }
 }

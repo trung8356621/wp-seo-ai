@@ -2779,13 +2779,15 @@ final class Rest_Controller
 
     public static function handle_sync_v3_discover(WP_REST_Request $request): WP_REST_Response
     {
-        unset($request);
         $provider = new Site_Sync_V3_Provider();
+        $language = (string) ($request->get_param('language') ?? $request->get_param('lang') ?? '');
 
         return new WP_REST_Response([
             'success' => true,
             'message' => 'Site Sync V3 discover.',
-            'discover' => $provider->discover(),
+            'discover' => $provider->discover([
+                'language' => $language,
+            ]),
         ], 200);
     }
 
@@ -2805,6 +2807,7 @@ final class Rest_Controller
                 'snapshot_at' => isset($params['snapshot_at']) ? (string) $params['snapshot_at'] : '',
                 'cursor' => is_array($params['cursor'] ?? null) ? $params['cursor'] : [],
                 'since' => isset($params['since']) ? (string) $params['since'] : '',
+                'language' => (string) ($params['language'] ?? $params['lang'] ?? ''),
                 'snapshot_bounds' => is_array($params['snapshot_bounds'] ?? null)
                     ? $params['snapshot_bounds']
                     : [],

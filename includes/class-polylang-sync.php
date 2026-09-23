@@ -127,6 +127,160 @@ final class Polylang_Sync
     }
 
     /**
+     * WP_Query lang arg for a single Polylang language (canonical or raw slug).
+     *
+     * @return array<string, string>
+     */
+    public static function query_args_for_language(string $language): array
+    {
+        $language = self::normalize_language_slug($language);
+        if ($language === '' || ! self::is_active()) {
+            return [];
+        }
+
+        $slugs = self::term_slugs_for_canonical($language);
+
+        return ['lang' => $slugs[0] ?? $language];
+    }
+
+    /**
+     * Polylang term slugs that normalize to the given canonical language code.
+     *
+     * @return list<string>
+     */
+    public static function term_slugs_for_canonical(string $canonical): array
+    {
+        $canonical = self::normalize_language_slug($canonical);
+        if ($canonical === '') {
+            return [];
+        }
+
+        if (! self::is_active() || ! function_exists('pll_languages_list')) {
+            return [$canonical];
+        }
+
+        $raw = pll_languages_list(['fields' => 'slug']);
+        if (! is_array($raw)) {
+            return [$canonical];
+        }
+
+        $matched = [];
+        foreach ($raw as $slug) {
+            $slug = trim((string) $slug);
+            if ($slug === '') {
+                continue;
+            }
+            if (self::normalize_language_slug($slug) === $canonical) {
+                $matched[] = $slug;
+            }
+        }
+
+        return $matched !== [] ? array_values(array_unique($matched)) : [$canonical];
+    }
+
+    /**
+     * SQL EXISTS fragment filtering posts by Polylang language taxonomy.
+     * Empty language or inactive Polylang → no filter (single-language / all-langs behavior).
+     *
+     * @param  string  $postsIdExpr  e.g. "{$wpdb->posts}.ID" or "p.ID"
+     * @return array{sql: string, params: list<string>}
+     */
+    public static function sql_posts_language_exists_fragment(string $postsIdExpr, string $language): array
+    {
+        $language = self::normalize_language_slug($language);
+        if ($language === '' || ! self::is_active()) {
+            return ['sql' => '', 'params' => []];
+        }
+
+        global $wpdb;
+        $slugs = self::term_slugs_for_canonical($language);
+        if ($slugs === []) {
+            return ['sql' => '', 'params' => []];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($slugs), '%s'));
+
+        return [
+            'sql' => " AND EXISTS (
+                SELECT 1 FROM {$wpdb->term_relationships} omi_pll_tr
+                INNER JOIN {$wpdb->term_taxonomy} omi_pll_tt
+                    ON omi_pll_tt.term_taxonomy_id = omi_pll_tr.term_taxonomy_id
+                    AND omi_pll_tt.taxonomy = 'language'
+                INNER JOIN {$wpdb->terms} omi_pll_t
+                    ON omi_pll_t.term_id = omi_pll_tt.term_id
+                WHERE omi_pll_tr.object_id = {$postsIdExpr}
+                AND omi_pll_t.slug IN ({$placeholders})
+            )",
+            'params' => $slugs,
+        ];
+    }
+
+    /**
+     * Content inventory counts grouped by canonical Polylang language.
+     *
+     * @param  list<string>  $postTypes
+     * @param  list<string>  $statuses
+     * @param  array{sql: string, params: list<int>}  $exclude
+     * @return array<string, int> canonical_lang => count
+     */
+    public static function count_content_by_language(
+        array $postTypes,
+        array $statuses,
+        array $exclude
+    ): array {
+        if (! self::is_active() || $postTypes === [] || $statuses === []) {
+            return [];
+        }
+
+        global $wpdb;
+        $typePlaceholders = implode(',', array_fill(0, count($postTypes), '%s'));
+        $statusPlaceholders = implode(',', array_fill(0, count($statuses), '%s'));
+        $excludeSql = (string) ($exclude['sql'] ?? '');
+        $excludeParams = is_array($exclude['params'] ?? null) ? $exclude['params'] : [];
+
+        $sql = "SELECT omi_pll_t.slug AS lang_slug, COUNT(DISTINCT {$wpdb->posts}.ID) AS cnt
+            FROM {$wpdb->posts}
+            INNER JOIN {$wpdb->term_relationships} omi_pll_tr
+                ON omi_pll_tr.object_id = {$wpdb->posts}.ID
+            INNER JOIN {$wpdb->term_taxonomy} omi_pll_tt
+                ON omi_pll_tt.term_taxonomy_id = omi_pll_tr.term_taxonomy_id
+                AND omi_pll_tt.taxonomy = 'language'
+            INNER JOIN {$wpdb->terms} omi_pll_t
+                ON omi_pll_t.term_id = omi_pll_tt.term_id
+            WHERE {$wpdb->posts}.post_type IN ({$typePlaceholders})
+            AND {$wpdb->posts}.post_status IN ({$statusPlaceholders})
+            {$excludeSql}
+            GROUP BY omi_pll_t.slug";
+
+        $params = array_merge($postTypes, $statuses, $excludeParams);
+        $prepared = $wpdb->prepare($sql, $params);
+        if (! is_string($prepared)) {
+            return [];
+        }
+
+        $rows = $wpdb->get_results($prepared, ARRAY_A);
+        if (! is_array($rows)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $canonical = self::normalize_language_slug(trim((string) ($row['lang_slug'] ?? '')));
+            $cnt = (int) ($row['cnt'] ?? 0);
+            if ($canonical === '' || $cnt <= 0) {
+                continue;
+            }
+            $out[$canonical] = ($out[$canonical] ?? 0) + $cnt;
+        }
+        ksort($out);
+
+        return $out;
+    }
+
+    /**
      * @return array{current_lang: string, translations: array<string, int>}|null
      */
     public static function payload_for_post(int $postId): ?array
