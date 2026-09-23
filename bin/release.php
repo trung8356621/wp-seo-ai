@@ -334,14 +334,30 @@ echo "github_release: created OK\n";
 $ghView = omi_release_run(
     'gh release view '.escapeshellarg($tag)
     .' --repo trung8356621/wp-seo-ai'
-    .' --json tagName,assets --jq ".tagName + \\\" \\\" + ([.assets[].name] | join(\\\",\\\"))"',
+    .' --json tagName,assets',
     $root
 );
-if (! $ghView['ok'] || ! str_contains($ghView['output'], $asset)) {
+$releaseMeta = json_decode($ghView['output'], true);
+$assetNames = [];
+if (is_array($releaseMeta) && is_array($releaseMeta['assets'] ?? null)) {
+    foreach ($releaseMeta['assets'] as $row) {
+        if (is_array($row) && isset($row['name'])) {
+            $assetNames[] = (string) $row['name'];
+        }
+    }
+}
+$tagName = is_array($releaseMeta) ? (string) ($releaseMeta['tagName'] ?? '') : '';
+if (
+    ! $ghView['ok']
+    || $tagName !== $tag
+    || ! in_array($asset, $assetNames, true)
+) {
     omi_release_fail(
-        "Release verify failed. Expected asset {$asset}. Output:\n".$ghView['output']
+        "Release verify failed. Expected tag {$tag} and asset {$asset}."
+        ." Found tagName={$tagName} assets=[".implode(',', $assetNames)."]."
+        ." Raw:\n".$ghView['output']
     );
 }
-echo 'release_verify: '.$ghView['output']." OK\n";
+echo 'release_verify: '.$tagName.' ['.implode(',', $assetNames)."] OK\n";
 echo "RELEASE OK {$next}\n";
 exit(0);
