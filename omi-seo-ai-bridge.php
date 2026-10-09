@@ -91,6 +91,8 @@ require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-local-seo-engine.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rest-controller.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-laravel-push-sync.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-faq-shortcode.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-cta-style-preset.php';
+require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-cta-shortcode.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-rank-math-faq-schema.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-admin-frontend-edit-link.php';
 require_once OMI_SEO_AI_BRIDGE_PATH . 'includes/class-redirection-manager.php';
@@ -117,6 +119,7 @@ add_action('init', static function (): void {
     \OmiSeoAiBridge\Local_Seo_Engine::register();
     \OmiSeoAiBridge\Post_Analysis_Service::register();
     \OmiSeoAiBridge\Faq_Shortcode::register();
+    \OmiSeoAiBridge\Cta_Shortcode::register();
     \OmiSeoAiBridge\Rank_Math_Faq_Schema::register();
     \OmiSeoAiBridge\Virtual_Comments::register();
     \OmiSeoAiBridge\Admin_Frontend_Edit_Link::register();
@@ -136,10 +139,72 @@ add_action('admin_menu', static function (): void {
         'dashicons-networking',
         58
     );
+    foreach ([
+        'omi-seo-ai' => __('Tổng quan', 'omi-seo-ai-bridge'),
+        'omi-seo-ai-settings' => __('Cài đặt', 'omi-seo-ai-bridge'),
+        'omi-seo-ai-redirections' => __('Chuyển hướng', 'omi-seo-ai-bridge'),
+        'omi-seo-ai-repair-images' => __('Sửa ảnh phụ', 'omi-seo-ai-bridge'),
+        'omi-seo-ai-revision-cleanup' => __('Revision', 'omi-seo-ai-bridge'),
+    ] as $slug => $label) {
+        add_submenu_page(
+            'omi-seo-ai',
+            $label,
+            $label,
+            'manage_options',
+            $slug,
+            'omi_seo_ai_bridge_render_admin_page'
+        );
+    }
 });
 
+add_action('admin_init', static function (): void {
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
+        return;
+    }
+    $page = isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : '';
+    $view = isset($_GET['view']) ? sanitize_key((string) wp_unslash($_GET['view'])) : '';
+    if ($page !== 'omi-seo-ai' || $view === '') {
+        return;
+    }
+    $target = omi_seo_ai_bridge_admin_slugs()[$view] ?? '';
+    if ($target === '' || $target === 'omi-seo-ai') {
+        return;
+    }
+    wp_safe_redirect(admin_url('admin.php?page='.$target));
+    exit;
+}, 0);
+
+/**
+ * @return array<string, string>
+ */
+function omi_seo_ai_bridge_admin_slugs(): array
+{
+    return [
+        'welcome' => 'omi-seo-ai',
+        'settings' => 'omi-seo-ai-settings',
+        'redirections' => 'omi-seo-ai-redirections',
+        'repair-images' => 'omi-seo-ai-repair-images',
+        'revision-cleanup' => 'omi-seo-ai-revision-cleanup',
+    ];
+}
+
+function omi_seo_ai_bridge_current_admin_view(): string
+{
+    $page = isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : '';
+    $view = isset($_GET['view']) ? sanitize_key((string) wp_unslash($_GET['view'])) : '';
+    $bySlug = array_flip(omi_seo_ai_bridge_admin_slugs());
+    if (isset($bySlug[$page]) && $bySlug[$page] !== 'welcome') {
+        return (string) $bySlug[$page];
+    }
+    if ($page === 'omi-seo-ai') {
+        return $view !== '' ? $view : 'welcome';
+    }
+
+    return '';
+}
+
 add_filter('plugin_action_links_' . OMI_SEO_AI_BRIDGE_BASENAME, static function (array $links): array {
-    $settingsUrl = admin_url('admin.php?page=omi-seo-ai&view=settings');
+    $settingsUrl = admin_url('admin.php?page=omi-seo-ai-settings');
     $settingsLink = sprintf(
         '<a href="%s">%s</a>',
         esc_url($settingsUrl),
@@ -153,7 +218,7 @@ add_action('admin_enqueue_scripts', static function (string $hook): void {
     unset($hook);
 
     $page = isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : '';
-    if ($page !== 'omi-seo-ai') {
+    if (! in_array($page, omi_seo_ai_bridge_admin_slugs(), true)) {
         return;
     }
 
@@ -164,7 +229,7 @@ add_action('admin_enqueue_scripts', static function (string $hook): void {
         OMI_SEO_AI_BRIDGE_VERSION
     );
 
-    if (isset($_GET['view']) && sanitize_key((string) wp_unslash($_GET['view'])) === 'repair-images') {
+    if (omi_seo_ai_bridge_current_admin_view() === 'repair-images') {
         wp_enqueue_script(
             'omi-seo-ai-image-variant-repair',
             OMI_SEO_AI_BRIDGE_URL . 'assets/image-variant-repair.js',
@@ -234,9 +299,7 @@ add_action('admin_init', static function (): void {
         return;
     }
 
-    $page = isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : '';
-    $view = isset($_GET['view']) ? sanitize_key((string) wp_unslash($_GET['view'])) : '';
-    if ($page !== 'omi-seo-ai' || $view !== 'settings') {
+    if (omi_seo_ai_bridge_current_admin_view() !== 'settings') {
         return;
     }
 
@@ -282,8 +345,7 @@ add_action('admin_init', static function (): void {
         }
 
         wp_safe_redirect(add_query_arg([
-            'page' => 'omi-seo-ai',
-            'view' => 'settings',
+            'page' => 'omi-seo-ai-settings',
             'updated' => '1',
         ], admin_url('admin.php')));
         exit;
@@ -292,8 +354,7 @@ add_action('admin_init', static function (): void {
     if (isset($_POST['omi_seo_test_laravel'])) {
         $result = \OmiSeoAiBridge\Laravel_Push_Sync::test_laravel_connection();
         wp_safe_redirect(add_query_arg([
-            'page' => 'omi-seo-ai',
-            'view' => 'settings',
+            'page' => 'omi-seo-ai-settings',
             'test_result' => ($result['success'] ?? false) ? 'ok' : 'fail',
             'test_msg' => rawurlencode((string) ($result['message'] ?? '')),
         ], admin_url('admin.php')));
@@ -307,8 +368,7 @@ add_action('admin_init', static function (): void {
             : ['success' => false, 'message' => 'Nhập ID bài viết / sản phẩm WP.'];
 
         wp_safe_redirect(add_query_arg([
-            'page' => 'omi-seo-ai',
-            'view' => 'settings',
+            'page' => 'omi-seo-ai-settings',
             'push_result' => ($result['success'] ?? false) ? 'ok' : 'fail',
             'push_msg' => rawurlencode((string) ($result['message'] ?? '')),
         ], admin_url('admin.php')));
@@ -339,8 +399,7 @@ add_action('admin_init', static function (): void {
         }
 
         wp_safe_redirect(add_query_arg([
-            'page' => 'omi-seo-ai',
-            'view' => 'settings',
+            'page' => 'omi-seo-ai-settings',
             'updatecheck_result' => $ok ? 'ok' : 'fail',
             'updatecheck_msg' => rawurlencode($msg),
         ], admin_url('admin.php')));
@@ -354,7 +413,10 @@ function omi_seo_ai_bridge_render_admin_page(): void
         wp_die(esc_html__('Bạn không có quyền truy cập trang này.', 'omi-seo-ai-bridge'));
     }
 
-    $view = isset($_GET['view']) ? sanitize_key((string) wp_unslash($_GET['view'])) : 'welcome';
+    $view = omi_seo_ai_bridge_current_admin_view();
+    if ($view === '') {
+        $view = 'welcome';
+    }
     if ($view === 'settings') {
         include OMI_SEO_AI_BRIDGE_PATH . 'views/settings.php';
         return;

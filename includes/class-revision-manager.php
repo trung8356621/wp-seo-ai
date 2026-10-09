@@ -89,9 +89,7 @@ final class Revision_Manager
             return;
         }
 
-        $page = isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : '';
-        $view = isset($_GET['view']) ? sanitize_key((string) wp_unslash($_GET['view'])) : '';
-        if ($page !== 'omi-seo-ai' || $view !== 'revision-cleanup') {
+        if (omi_seo_ai_bridge_current_admin_view() !== 'revision-cleanup') {
             return;
         }
 
@@ -111,8 +109,7 @@ final class Revision_Manager
         $result = self::cleanup_batch(500);
 
         wp_safe_redirect(add_query_arg([
-            'page' => 'omi-seo-ai',
-            'view' => 'revision-cleanup',
+            'page' => 'omi-seo-ai-revision-cleanup',
             'deleted' => (string) $result['deleted'],
             'remaining' => (string) $result['remaining'],
         ], admin_url('admin.php')));

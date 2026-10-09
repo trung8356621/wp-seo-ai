@@ -8,11 +8,6 @@ if (! defined('ABSPATH')) {
 
 <div class="wrap omi-seo-ai-bridge-wrap omi-seo-ai-repair-wrap">
     <div class="omi-seo-ai-bridge-card">
-        <div class="omi-seo-ai-bridge-actions">
-            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai')); ?>">Tổng quan</a>
-            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=settings')); ?>">Cài đặt</a>
-        </div>
-
         <h2>Sửa toàn bộ ảnh phụ sai tên</h2>
         <p class="description">
             Quét Media Library để tìm ảnh phụ có basename khác file full. Khi sửa, plugin xóa các image size cũ,

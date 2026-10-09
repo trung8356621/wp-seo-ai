@@ -112,6 +112,20 @@ final class Rest_Controller
             'methods'             => WP_REST_Server::READABLE,
             'callback'            => [self::class, 'handle_sync_v3_discover'],
             'permission_callback' => [self::class, 'authorize'],
+            'args'                => [
+                'language' => [
+                    'type'              => 'string',
+                    'required'          => false,
+                    'default'           => '',
+                    'sanitize_callback' => static fn ($value): string => sanitize_key((string) $value),
+                ],
+                'lang' => [
+                    'type'              => 'string',
+                    'required'          => false,
+                    'default'           => '',
+                    'sanitize_callback' => static fn ($value): string => sanitize_key((string) $value),
+                ],
+            ],
         ]);
 
         register_rest_route(self::NAMESPACE, '/sync/v3/records', [
@@ -2782,12 +2796,20 @@ final class Rest_Controller
         $provider = new Site_Sync_V3_Provider();
         $language = (string) ($request->get_param('language') ?? $request->get_param('lang') ?? '');
 
+        $discover = $provider->discover([
+            'language' => $language,
+        ]);
+        if (($discover['success'] ?? true) === false) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => (string) ($discover['error'] ?? $discover['message'] ?? 'V3 discover failed'),
+            ], 400);
+        }
+
         return new WP_REST_Response([
             'success' => true,
             'message' => 'Site Sync V3 discover.',
-            'discover' => $provider->discover([
-                'language' => $language,
-            ]),
+            'discover' => $discover,
         ], 200);
     }
 

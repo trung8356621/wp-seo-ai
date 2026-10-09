@@ -21,18 +21,13 @@ foreach ($items as $item) {
 ?>
 
 <div class="wrap omi-seo-ai-bridge-wrap omi-seo-ai-redirections-wrap">
-    <div class="omi-seo-ai-bridge-actions">
-        <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=settings')); ?>">Cài đặt</a>
-        <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai')); ?>">Tổng quan</a>
-    </div>
-
     <?php if ($message !== '') : ?>
-        <div class="notice notice-success is-dismissible"><p>Đã cập nhật chuyển hướng.</p></div>
+        <div class="notice notice-success is-dismissible omi-seo-ai-notice"><p>Đã cập nhật chuyển hướng.</p></div>
     <?php endif; ?>
 
     <div class="omi-seo-ai-bridge-card">
         <h2><?php echo $editing !== null ? 'Sửa chuyển hướng' : 'Thêm chuyển hướng'; ?></h2>
-        <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=redirections')); ?>">
+        <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai-redirections')); ?>">
             <?php wp_nonce_field('omi_seo_ai_redirections'); ?>
             <input type="hidden" name="omi_redirection_action" value="save" />
             <input type="hidden" name="redirect_id" value="<?php echo esc_attr((string) ($editing['id'] ?? '')); ?>" />
@@ -63,7 +58,7 @@ foreach ($items as $item) {
             <p>
                 <button type="submit" class="button button-primary"><?php echo $editing !== null ? 'Cập nhật' : 'Thêm chuyển hướng'; ?></button>
                 <?php if ($editing !== null) : ?>
-                    <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=redirections')); ?>">Hủy</a>
+                    <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai-redirections')); ?>">Hủy</a>
                 <?php endif; ?>
             </p>
         </form>
@@ -97,13 +92,13 @@ foreach ($items as $item) {
                             <td><?php echo esc_html((string) $item['hits']); ?></td>
                             <td class="omi-seo-redirection-actions">
                                 <a class="button button-small" href="<?php echo esc_url(add_query_arg(['page' => 'omi-seo-ai', 'view' => 'redirections', 'edit' => $item['id']], admin_url('admin.php'))); ?>">Sửa</a>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=redirections')); ?>">
+                                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai-redirections')); ?>">
                                     <?php wp_nonce_field('omi_seo_ai_redirections'); ?>
                                     <input type="hidden" name="omi_redirection_action" value="toggle" />
                                     <input type="hidden" name="redirect_id" value="<?php echo esc_attr((string) $item['id']); ?>" />
                                     <button class="button button-small" type="submit"><?php echo $item['enabled'] ? 'Tắt' : 'Bật'; ?></button>
                                 </form>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=redirections')); ?>" onsubmit="return confirm('Xóa chuyển hướng này?');">
+                                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai-redirections')); ?>" onsubmit="return confirm('Xóa chuyển hướng này?');">
                                     <?php wp_nonce_field('omi_seo_ai_redirections'); ?>
                                     <input type="hidden" name="omi_redirection_action" value="delete" />
                                     <input type="hidden" name="redirect_id" value="<?php echo esc_attr((string) $item['id']); ?>" />

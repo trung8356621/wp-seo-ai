@@ -128,9 +128,7 @@ final class Redirection_Manager
             return;
         }
 
-        $page = isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : '';
-        $view = isset($_GET['view']) ? sanitize_key((string) wp_unslash($_GET['view'])) : '';
-        if ($page !== 'omi-seo-ai' || $view !== 'redirections' || ! isset($_POST['omi_redirection_action'])) {
+        if (omi_seo_ai_bridge_current_admin_view() !== 'redirections' || ! isset($_POST['omi_redirection_action'])) {
             return;
         }
 
@@ -157,8 +155,7 @@ final class Redirection_Manager
         }
 
         wp_safe_redirect(add_query_arg([
-            'page' => 'omi-seo-ai',
-            'view' => 'redirections',
+            'page' => 'omi-seo-ai-redirections',
             'message' => $message,
         ], admin_url('admin.php')));
         exit;

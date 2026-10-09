@@ -52,6 +52,14 @@ final class Site_Sync_V3_Provider
     public function discover(array $args = []): array
     {
         $this->language_scope = $this->normalize_language_arg($args['language'] ?? $args['lang'] ?? '');
+        if ($this->language_scope !== '' && Polylang_Sync::is_active()) {
+            $slugs = Polylang_Sync::term_slugs_for_canonical($this->language_scope);
+            if ($slugs === []) {
+                return $this->error_payload(
+                    'language_scope_unresolved: no Polylang term slug for "'.$this->language_scope.'"'
+                );
+            }
+        }
         $snapshotAt = gmdate('c');
         $generatedAt = $snapshotAt;
         $inventory = $this->count_content_inventory();
@@ -129,7 +137,8 @@ final class Site_Sync_V3_Provider
      */
     public function records(array $args): array
     {
-        $this->language_scope = $this->normalize_language_arg($args['language'] ?? $args['lang'] ?? '');
+        $requestedLanguage = $this->normalize_language_arg($args['language'] ?? $args['lang'] ?? '');
+        $this->language_scope = $requestedLanguage;
         $resource = (string) ($args['resource'] ?? '');
         $mode = (string) ($args['mode'] ?? 'full');
         $limit = (int) ($args['limit'] ?? self::DEFAULT_LIMIT);
@@ -143,6 +152,16 @@ final class Site_Sync_V3_Provider
         }
         if (! in_array($mode, ['full', 'delta'], true)) {
             return $this->error_payload('mode must be full|delta');
+        }
+
+        // Multilingual content requests with an explicit language must never run unscoped.
+        if ($resource === 'content' && $requestedLanguage !== '' && Polylang_Sync::is_active()) {
+            $slugs = Polylang_Sync::term_slugs_for_canonical($requestedLanguage);
+            if ($slugs === []) {
+                return $this->error_payload(
+                    'language_scope_unresolved: no Polylang term slug for "'.$requestedLanguage.'"'
+                );
+            }
         }
 
         $snapshotAt = isset($args['snapshot_at']) ? (string) $args['snapshot_at'] : '';

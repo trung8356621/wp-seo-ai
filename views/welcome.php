@@ -15,7 +15,7 @@ use OmiSeoAiBridge\Missed_Schedule_Fixer;
 use OmiSeoAiBridge\Wp_Cron_Disabler;
 
 $is_connected = function_exists('omi_seo_ai_bridge_is_connected') && omi_seo_ai_bridge_is_connected();
-$settings_url = admin_url('admin.php?page=omi-seo-ai&view=settings');
+$settings_url = admin_url('admin.php?page=omi-seo-ai-settings');
 $missed_posts = Missed_Schedule_Fixer::list_missed_posts();
 $missed_count = count($missed_posts);
 
@@ -27,17 +27,6 @@ $missed_msg = isset($_GET['missed_msg']) ? sanitize_text_field(rawurldecode((str
 ?>
 <div class="wrap omi-seo-ai-bridge-wrap">
     <div class="omi-seo-ai-bridge-card">
-        <div class="omi-seo-ai-bridge-actions">
-            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=redirections')); ?>">
-                Chuyển hướng
-            </a>
-            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=repair-images')); ?>">
-                Sửa ảnh phụ sai tên
-            </a>
-            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai&view=revision-cleanup')); ?>">
-                Dọn dẹp Revision
-            </a>
-        </div>
         <div class="omi-seo-ai-bridge-card__corner">
             <a href="<?php echo esc_url($settings_url); ?>" title="<?php esc_attr_e('Cài đặt', 'omi-seo-ai-bridge'); ?>" aria-label="<?php esc_attr_e('Cài đặt', 'omi-seo-ai-bridge'); ?>">
                 <span class="dashicons dashicons-admin-generic" aria-hidden="true"></span>

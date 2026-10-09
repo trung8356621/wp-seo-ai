@@ -1,8 +1,15 @@
 /* TVH SEO AI Bridge – admin settings & welcome */
 
 .omi-seo-ai-bridge-wrap {
-    max-width: 720px;
-    margin: 20px 20px 20px 0;
+    max-width: none;
+    margin: 16px 20px 16px 0;
+}
+
+body.toplevel_page_omi-seo-ai .notice:not(.notice-error):not(.omi-seo-ai-notice),
+body.toplevel_page_omi-seo-ai .update-nag,
+body[class*="page_omi-seo-ai"] .notice:not(.notice-error):not(.omi-seo-ai-notice),
+body[class*="page_omi-seo-ai"] .update-nag {
+    display: none;
 }
 
 .omi-seo-ai-bridge-card {

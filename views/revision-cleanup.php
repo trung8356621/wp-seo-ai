@@ -18,12 +18,6 @@ $disabled = \OmiSeoAiBridge\Revision_Manager::is_disabled();
 ?>
 <div class="wrap omi-seo-ai-bridge-wrap">
     <div class="omi-seo-ai-bridge-card">
-        <div class="omi-seo-ai-bridge-actions">
-            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=omi-seo-ai')); ?>">
-                ← TVH SEO AI
-            </a>
-        </div>
-
         <h2>Dọn dẹp Revision cũ</h2>
         <p class="omi-seo-ai-bridge-subtitle">
             Plugin TVH SEO AI đã tắt revision WordPress mặc định để giảm tải database.
@@ -31,7 +25,7 @@ $disabled = \OmiSeoAiBridge\Revision_Manager::is_disabled();
         </p>
 
         <?php if ($deleted !== null) : ?>
-            <div class="notice notice-success is-dismissible">
+            <div class="notice notice-success is-dismissible omi-seo-ai-notice">
                 <p>
                     <?php
                     printf(

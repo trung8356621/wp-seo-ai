@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "presets": {
+    "soft": {
+      "layout": "stack",
+      "theme_color": "primary",
+      "background": "tint",
+      "text": "text",
+      "border": "subtle",
+      "spacing": 16,
+      "radius": 12,
+      "icon": "none"
+    },
+    "consultation": {
+      "layout": "stack",
+      "theme_color": "secondary",
+      "background": "surface",
+      "text": "text",
+      "border": "strong",
+      "spacing": 18,
+      "radius": 10,
+      "icon": "chat"
+    },
+    "conversion": {
+      "layout": "inline",
+      "theme_color": "accent",
+      "background": "tint",
+      "text": "text",
+      "border": "subtle",
+      "spacing": 14,
+      "radius": 8,
+      "icon": "arrow"
+    }
+  }
+}

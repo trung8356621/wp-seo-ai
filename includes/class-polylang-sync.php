@@ -195,7 +195,8 @@ final class Polylang_Sync
         global $wpdb;
         $slugs = self::term_slugs_for_canonical($language);
         if ($slugs === []) {
-            return ['sql' => '', 'params' => []];
+            // Fail closed: requested language must never silently expand to all posts.
+            return ['sql' => ' AND 1=0', 'params' => []];
         }
 
         $placeholders = implode(',', array_fill(0, count($slugs), '%s'));
