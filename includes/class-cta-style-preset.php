@@ -237,19 +237,22 @@ final class Cta_Style_Preset
             $base = $m[1];
         }
         if (in_array($base, ['phone', 'hotline'], true)) {
-            if (preg_match('#^tel:#i', $destination) === 1) {
-                return $destination;
+            if (preg_match('#^(?:javascript|data|vbscript):#i', $destination) === 1) {
+                return '';
             }
-            $digits = preg_replace('/[^\d+]/', '', $destination) ?? '';
+            $rawDigits = preg_replace('#^tel:#i', '', $destination) ?? $destination;
+            $digits = preg_replace('/[^\d+]/', '', $rawDigits) ?? '';
 
-            return $digits !== '' ? 'tel:'.$digits : '';
+            return preg_match('/^\+?\d{3,}$/', $digits) === 1 ? 'tel:'.$digits : '';
         }
         if ($base === 'email') {
-            if (preg_match('#^mailto:#i', $destination) === 1) {
-                return $destination;
+            $email = preg_replace('#^mailto:#i', '', $destination) ?? $destination;
+            $email = trim($email);
+            if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+                return '';
             }
 
-            return 'mailto:'.$destination;
+            return 'mailto:'.$email;
         }
         if (self::safeDestination($destination)) {
             return $destination;

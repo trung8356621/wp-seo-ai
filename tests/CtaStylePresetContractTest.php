@@ -73,6 +73,38 @@ $nested = Cta_Style_Preset::render('Before [seo_ops_cta style="conversion"]nope[
 cta_assert(! str_contains($nested, '[seo_ops_cta'), 'nested shortcode markup is removed');
 cta_assert(substr_count($nested, '<aside') === 1, 'nested shortcode does not create a second CTA');
 
+$contactHtml = Cta_Style_Preset::render(
+    'Call [[cta:phone_1]] / [[cta:phone_2]], mail [[cta:email]] / [[cta:email_1]] / [[cta:email_2]], chat [[cta:zalo]] / [[cta:facebook]], visit [[cta:address]].',
+    'soft',
+    [
+        'phone_1' => '0988693337',
+        'phone_2' => '0901167668',
+        'email' => 'info@example.test',
+        'email_1' => 'info@example.test',
+        'email_2' => 'sales@example.test',
+        'zalo' => 'https://zalo.me/0901167668',
+        'facebook' => 'https://www.facebook.com/page',
+        'address' => '48/1 Duong So 3',
+    ]
+);
+cta_assert(str_contains($contactHtml, '<a href="tel:0988693337">0988693337</a>'), 'phone_1 renders tel link');
+cta_assert(str_contains($contactHtml, '<a href="tel:0901167668">0901167668</a>'), 'phone_2 renders tel link');
+cta_assert(substr_count($contactHtml, '<a href="mailto:info@example.test">Email</a>') === 2, 'email and email_1 render mailto link');
+cta_assert(str_contains($contactHtml, '<a href="mailto:sales@example.test">Email</a>'), 'email_2 renders mailto link');
+cta_assert(str_contains($contactHtml, '<a href="https://zalo.me/0901167668">Zalo</a>'), 'zalo renders labeled link');
+cta_assert(str_contains($contactHtml, '<a href="https://www.facebook.com/page">Facebook</a>'), 'facebook renders labeled link');
+cta_assert(str_contains($contactHtml, '48/1 Duong So 3') && ! str_contains($contactHtml, 'href="48/1'), 'address remains plain text');
+
+$unsafeContacts = Cta_Style_Preset::render(
+    'Bad [[cta:phone_1]] [[cta:email_1]]',
+    'soft',
+    [
+        'phone_1' => 'javascript:alert(1)',
+        'email_1' => 'not-an-email',
+    ]
+);
+cta_assert(! str_contains($unsafeContacts, '<a '), 'invalid phone and email do not render anchor');
+
 if ($failed > 0) {
     fwrite(STDERR, "{$failed} failed\n");
     exit(1);
