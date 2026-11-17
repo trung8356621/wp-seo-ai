@@ -14,7 +14,34 @@ if (! defined('ABSPATH')) {
 final class Cta_Style_Preset
 {
     /** @var list<string> */
-    public const ALIASES = ['zalo', 'facebook', 'email', 'phone', 'address', 'website', 'products'];
+    public const ALIASES = [
+        'zalo',
+        'facebook',
+        'instagram',
+        'youtube',
+        'linkedin',
+        'pinterest',
+        'tiktok',
+        'threads',
+        'twitter',
+        'x',
+        'email',
+        'email_1',
+        'email_2',
+        'email_3',
+        'phone',
+        'phone_1',
+        'phone_2',
+        'phone_3',
+        'hotline',
+        'address',
+        'working_hours',
+        'website',
+        'products',
+    ];
+
+    /** @var list<string> */
+    public const PLAIN_TEXT_ALIASES = ['address', 'working_hours'];
 
     /**
      * @return array<string, mixed>
@@ -150,22 +177,88 @@ final class Cta_Style_Preset
     {
         $content = wp_kses_post_fallback($content);
 
-        return (string) preg_replace_callback('/\[([a-z]+)\]/i', static function (array $match) use ($destinations): string {
-            $alias = strtolower($match[1]);
-            if (! in_array($alias, self::ALIASES, true)) {
-                return '';
+        // Prefer [[cta:type]] then legacy [type].
+        return (string) preg_replace_callback(
+            '/\[\[cta:([a-z0-9_]+)\]\]|\[([a-z0-9_]+)\]/i',
+            static function (array $match) use ($destinations): string {
+                $alias = strtolower(trim((string) (($match[1] ?? '') !== '' ? $match[1] : ($match[2] ?? ''))));
+                if ($alias === '' || ! in_array($alias, self::ALIASES, true)) {
+                    return esc_html_fallback((string) $match[0]);
+                }
+
+                $destination = trim((string) ($destinations[$alias] ?? ''));
+                if ($destination === '' && preg_match('/^(phone|email)_(\d+)$/', $alias, $m) === 1) {
+                    $destination = trim((string) ($destinations[$m[1]] ?? ''));
+                }
+
+                if (in_array($alias, self::PLAIN_TEXT_ALIASES, true) || self::isPlainTextAlias($alias)) {
+                    // Address / working hours stay plain text — never Maps hyperlinks.
+                    if ($destination === '' || self::looksLikeUrl($destination)) {
+                        return esc_html_fallback((string) $match[0]);
+                    }
+
+                    return esc_html_fallback($destination);
+                }
+
+                $href = self::normalizeHref($alias, $destination);
+                if (! self::safeDestination($href)) {
+                    return esc_html_fallback((string) $match[0]);
+                }
+                $safeHref = esc_url_fallback($href);
+                if ($safeHref === '') {
+                    return esc_html_fallback((string) $match[0]);
+                }
+
+                return '<a href="'.$safeHref.'">'.esc_html_fallback(self::label($alias, $destination)).'</a>';
+            },
+            $content
+        );
+    }
+
+    private static function isPlainTextAlias(string $alias): bool
+    {
+        return in_array($alias, self::PLAIN_TEXT_ALIASES, true);
+    }
+
+    private static function looksLikeUrl(string $value): bool
+    {
+        return preg_match('#^(https?://|mailto:|tel:)#i', $value) === 1
+            || str_contains(strtolower($value), 'google.com/maps');
+    }
+
+    private static function normalizeHref(string $alias, string $destination): string
+    {
+        $destination = trim($destination);
+        if ($destination === '') {
+            return '';
+        }
+        $base = $alias;
+        if (preg_match('/^(phone|email)_\d+$/', $alias, $m) === 1) {
+            $base = $m[1];
+        }
+        if (in_array($base, ['phone', 'hotline'], true)) {
+            if (preg_match('#^tel:#i', $destination) === 1) {
+                return $destination;
             }
-            $destination = trim((string) ($destinations[$alias] ?? ''));
-            if (! self::safeDestination($destination)) {
-                return esc_html_fallback(self::label($alias));
-            }
-            $href = esc_url_fallback($destination);
-            if ($href === '') {
-                return esc_html_fallback(self::label($alias));
+            $digits = preg_replace('/[^\d+]/', '', $destination) ?? '';
+
+            return $digits !== '' ? 'tel:'.$digits : '';
+        }
+        if ($base === 'email') {
+            if (preg_match('#^mailto:#i', $destination) === 1) {
+                return $destination;
             }
 
-            return '<a href="'.$href.'">'.esc_html_fallback(self::label($alias)).'</a>';
-        }, $content);
+            return 'mailto:'.$destination;
+        }
+        if (self::safeDestination($destination)) {
+            return $destination;
+        }
+        if (preg_match('#^https?://#i', $destination) !== 1 && preg_match('#^[a-z0-9.-]+\.[a-z]{2,}#i', $destination) === 1) {
+            return 'https://'.ltrim($destination, '/');
+        }
+
+        return '';
     }
 
     private static function safeDestination(string $value): bool
@@ -177,16 +270,31 @@ final class Cta_Style_Preset
         return preg_match('#^(https?://|mailto:|tel:)#i', $value) === 1;
     }
 
-    private static function label(string $alias): string
+    private static function label(string $alias, string $destination = ''): string
     {
-        return match ($alias) {
+        $base = $alias;
+        if (preg_match('/^(phone|email)_\d+$/', $alias, $m) === 1) {
+            $base = $m[1];
+        }
+
+        return match ($base) {
             'zalo' => 'Zalo',
             'facebook' => 'Facebook',
-            'email' => 'email',
-            'phone' => 'phone',
+            'instagram' => 'Instagram',
+            'youtube' => 'YouTube',
+            'linkedin' => 'LinkedIn',
+            'pinterest' => 'Pinterest',
+            'tiktok' => 'TikTok',
+            'threads' => 'Threads',
+            'twitter', 'x' => 'X',
+            'email' => 'Email',
+            'phone', 'hotline' => $destination !== '' && preg_match('#^tel:#i', $destination) !== 1
+                ? $destination
+                : (preg_replace('#^tel:#i', '', $destination) ?: 'phone'),
             'address' => 'address',
+            'working_hours' => 'working hours',
             'products' => 'products',
-            default => 'website',
+            default => 'Website',
         };
     }
 }

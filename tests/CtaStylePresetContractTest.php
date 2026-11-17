@@ -46,14 +46,28 @@ $html = Cta_Style_Preset::render(
     ['website' => 'https://shop.test']
 );
 cta_assert(str_contains($html, 'href="https://shop.test"'), 'configured website resolves');
-cta_assert(! str_contains($html, '[facebook]'), 'missing alias is not printed raw');
+cta_assert(str_contains($html, '>Website</a>'), 'website anchor uses platform label');
+cta_assert(str_contains($html, '[facebook]'), 'missing channel keeps original token');
 cta_assert(! str_contains($html, 'facebook.com'), 'missing destination is not invented');
 cta_assert(str_contains($html, 'data-cta-style="conversion"'), 'style preset is applied');
 cta_assert(str_contains($html, '--primary-color'), 'Flatsome and theme palette fallback is present');
 cta_assert(! str_contains(strtolower($html), 'javascript:'), 'javascript destinations stay out');
 
+$ctaTokens = Cta_Style_Preset::render(
+    'Chat [[cta:zalo]] hoặc [[cta:address]].',
+    'soft',
+    [
+        'zalo' => 'https://zalo.me/123?ref=x',
+        'address' => '12 Nguyen Hue',
+    ]
+);
+cta_assert(str_contains($ctaTokens, '<a href="https://zalo.me/123?ref=x">Zalo</a>'), '[[cta:zalo]] becomes labeled anchor');
+cta_assert(str_contains($ctaTokens, '12 Nguyen Hue'), 'address resolves as plain text');
+cta_assert(! str_contains($ctaTokens, 'google.com/maps'), 'address does not become maps link');
+cta_assert(! str_contains($ctaTokens, '<a href="12 Nguyen Hue">'), 'address is not hyperlinked');
+
 $unsafe = Cta_Style_Preset::render('Go [website].', 'soft', ['website' => 'javascript:alert(1)']);
-cta_assert(! str_contains($unsafe, 'javascript:'), 'unsafe url dropped');
+cta_assert(! str_contains($unsafe, 'href="javascript:'), 'unsafe url dropped from href');
 
 $nested = Cta_Style_Preset::render('Before [seo_ops_cta style="conversion"]nope[/seo_ops_cta] after [website].', 'soft', ['website' => 'https://shop.test']);
 cta_assert(! str_contains($nested, '[seo_ops_cta'), 'nested shortcode markup is removed');
